@@ -27,11 +27,11 @@ The documents of lurk is writing now alongside the development of lurk. The part
 
 - Transaction fault tolerance ensures that the receiving party's database updates the file tuple to a specific table only when the file deliver is successful, and only updates the directory tuple to a specific table when all files in the directory have delivered successfully, to ensure state consistency.
 
-- Resuming transfer. If the file transfer is interrupted, two independent file transfer processes will perform a complete comparison to determine the required file blocks.
+- Resuming transfer. If the file transfer is interrupted, independent file transfer processes will perform a complete comparison to determine the required file blocks.
 
 - Defensive read-only design and non-destructive transmission, with the sender adopting a strict read-only mode, making no modifications, and reading all file data only in kernel mode during transmission, which will be modified in the user mode.
 
-- Reduce the overhead of processes creation, optimize for high processes creation overhead in the darwin kernel (different from Linux lightweight processes), where creating a process does not inherit the parent process's page table, does not use Copy-On-Write, but creates a new process instead, and redirects its standard output and error output to the current process;
+- ...
 
 - > [!NOTE]
   >
@@ -142,10 +142,6 @@ single_file_deliver_process acts like this:
 >
 > Making now...
 
-
-
-
-
 ## Test Matrix
 
 ### Dir Sync Test
@@ -170,5 +166,3 @@ single_file_deliver_process acts like this:
 | ---------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
 | Positive Example | 1. Set a non-empty dirs to make verify file and update tables;<br/>2. Dir has over 100 Files.                         | PASSED.<br/>All verify files calculated successfully. |
 | Positive Example | 1. Set a non-empty dirs to make verify file and update tables;<br/>2. Dir has one file, which size is more than 15GB. | PASSED.<br/>Verify files calculated successfully.     |
-
-

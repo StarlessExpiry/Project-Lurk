@@ -17,9 +17,7 @@ SUB_DIR := 	$(SRC_DIR)/core \
 			$(SRC_DIR)/tools
 
 TARGETS := $(addprefix $(BIN_DIR)/, $(basename $(wildcard *.cpp)))
-# TARGETS := $(BIN_DIR)/cli $(BIN_DIR)/serv $(BIN_DIR)/update $(BIN_DIR)/deliver_server $(BIN_DIR)/lurk_show_dirs
 
-# cancel multithreading, make sure the sequence is 1.SUB_DIR, 2.TARGETS
 all:
 	@$(MAKE) exec_module
 	@$(MAKE) $(TARGETS)
@@ -38,24 +36,7 @@ $(TARGETS): $(BIN_DIR)/%: $(SRC_DIR)/%.cpp $(wildcard $(addsuffix /$(OBJ_DIR)/*.
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
-# $(BIN_DIR)/cli: client.cpp $(wildcard $(addsuffix /$(OBJ_DIR)/*.o, $(SUB_DIR)))
-# 	@mkdir -p $(dir $@)
-# 	$(CXX) $(CXXFLAGS) $^ -o $@
-#
-# $(BIN_DIR)/serv: server.cpp $(wildcard $(addsuffix /$(OBJ_DIR)/*.o, $(SUB_DIR)))
-# 	@mkdir -p $(dir $@)
-# 	$(CXX) $(CXXFLAGS) $^ -o $@
-#
-# $(BIN_DIR)/update: update.cpp $(wildcard $(addsuffix /$(OBJ_DIR)/*.o, $(SUB_DIR)))
-# 	@mkdir -p $(dir $@)
-# 	$(CXX) $(CXXFLAGS) $^ -o $@
-#
-# $(BIN_DIR)/deliver_server: deliver_server.cpp $(wildcard $(addsuffix /$(OBJ_DIR)/*.o, $(SUB_DIR)))
-# 	@mkdir -p $(dir $@)
-# 	$(CXX) $(CXXFLAGS) $^ -o $@
-# $(BIN_DIR)/lurk_show_dirs: lurk_show_dirs.cpp $(wildcard $(addsuffix /$(OBJ_DIR)/*.o, $(SUB_DIR)))
-# 	@mkdir -p $(dir $@)
-# 	$(CXX) $(CXXFLAGS) $^ -o $@
+
 
 
 clean:
