@@ -1,0 +1,25 @@
+---
+If:
+  PathMatch: [.*\.h, .*\.c]
+CompileFlags:
+  Add:
+    - -DDEBUG
+    - -Wall
+---
+If:
+  PathMatch: [ .*\.hpp, .*\.cpp]
+CompileFlags:
+  Add:
+    - -Wall
+    - -std=c++11
+
+---
+CompileFlags:
+  Add:
+    - -DDEBUG
+    - -I.
+    - -I..
+    - -I../deps
+    - -Ideps
+    - -Ideps/yaml-cpp/include
+    - -I../deps/yaml-cpp/include

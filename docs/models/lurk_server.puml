@@ -1,0 +1,51 @@
+@startuml
+
+start
+split
+    fork
+        partition file_deliver_process1 {
+            while (waiting new connection)
+                :file_deliver;
+            end while (SITINT...)
+        }
+    fork again
+        partition file_deliver_process2 {
+            while (waiting new connection)
+                :file_deliver;
+            end while (SITINT...)
+        }
+    fork again
+        partition file_deliver_process3 {
+            while (waiting new connection)
+                :file_deliver;
+            end while (SITINT...)
+        }
+    fork again
+        partition file_deliver_process4 {
+            while (waiting new connection)
+                :file_deliver;
+            end while (SITINT...)
+        }
+    end fork
+split again
+    repeat :waiting for new connection;
+    repeat while (spawn a new process)
+    fork
+        partition dir_sync_process'x' {
+            :waiting connection on this port;
+            :dir_sync;
+        }
+    fork again
+        partition dir_sync_process'x+1' {
+            :waiting connection on this port;
+            :dir_sync;
+        }
+    fork again
+        :...;
+    end fork
+end split
+
+stop
+
+
+@enduml

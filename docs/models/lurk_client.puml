@@ -1,0 +1,66 @@
+@startuml
+start
+if (database has managed directories?) then (yes)
+    split
+        partition dir_sync_thread1 {
+            while (could get a dirpath from a send list) is (yes)
+                fork
+                    :update_process;
+                end fork
+                :connect to server;
+                while (sync dir with server) is (send file)
+                    fork
+                        :file_deliver process;
+                    end fork
+                end while (done)
+            endwhile (no)
+        }
+    split again
+        partition dir_sync_thread2 {
+            while (could get a dirpath from a send list) is (yes)
+                fork
+                    :update_process;
+                end fork
+                :connect to server;
+                while (sync dir with server) is (send file)
+                    fork
+                        :file_deliver process;
+                    end fork
+                end while (done)
+            endwhile (no)
+        }
+    split again
+        partition dir_sync_thread3 {
+            while (could get a dirpath from a send list) is (yes)
+                fork
+                    :update_process;
+                end fork
+                :connect to server;
+                while (sync dir with server) is (send file)
+                    fork
+                        :file_deliver process;
+                    end fork
+                end while (done)
+            endwhile (no)
+        }
+    split again
+        partition dir_sync_thread4 {
+            while (could get a dirpath from a send list) is (yes)
+                fork
+                    :update_process;
+                end fork
+                :connect to server;
+                while (sync dir with server) is (send file)
+                    fork
+                        :file_deliver process;
+                    end fork
+                end while (done)
+            endwhile (no)
+        }
+    end split
+
+else (no)
+endif
+
+stop
+@enduml

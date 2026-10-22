@@ -1,0 +1,5 @@
+.DS_Store
+deploy/bin/*
+obj/
+obj-test/
+build/

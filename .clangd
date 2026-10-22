@@ -1,0 +1,27 @@
+---
+If:
+  PathMatch: [.*\.h, .*\.c]
+CompileFlags:
+  Add:
+    - -Wall
+    - -I../
+    - -I../../
+    # for all test
+    - -I../../src 
+  # Compiler: clang
+---
+If:
+  PathMatch: [ .*\.hpp, .*\.cpp]
+CompileFlags:
+  Add:
+    - -Wall
+    - -std=c++11
+    - -I../
+    - -I../../
+    # for all test
+    - -I../../src     
+    # - -I/Users/starless/Projects/Sync-Files-System/src
+    # - -I/Users/starless/Projects/Sync-Files-System/src/deps
+  # Compiler: clang++
+
+  

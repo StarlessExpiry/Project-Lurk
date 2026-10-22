@@ -1,0 +1,70 @@
+@startuml
+state client {
+    [*] --> CLIENT_INFO
+    CLIENT_INFO: 1. Take a information of single dir (a tuple) from database and send it;
+    CLIENT_INFO: 2. Recv the reply from server.
+
+    CLIENT_INFO --> [*] : if reply is DI_NO_NEED_DELIVER
+    CLIENT_INFO --> SEND_FILES : if reply is DI_NEED_ALL
+    CLIENT_INFO --> SEND_TUPLES: if reply is DI_NEED_COMPARE
+
+    CLIENT_INFO --> SERVER_INFO: 1
+
+    SEND_FILES: Send all files from dir
+    SEND_FILES --> RECV_FILES
+    SEND_FILES --> [*]
+
+    note top of SEND_FILES
+    use database to get all files path
+    end note
+
+    SEND_TUPLES: Send all tuples from a files table in database, where record the stat of files (the folder specified in this task)
+    SEND_TUPLES --> CLIENT_FILES_NEED : after send all tuples
+    SEND_TUPLES --> RECV_TUPLES_AND_COMPARE
+    
+    CLIENT_FILES_NEED: 1. Recv a filepath, as a node of file_need_list and push it into the list;
+    CLIENT_FILES_NEED: 2. Send single file which specified by a node of file_need_list, pop the front of list.
+
+
+    CLIENT_FILES_NEED --> [*]
+    CLIENT_FILES_NEED --> SERVER_FILES_NEED : 2
+
+}
+
+
+state server {
+    [*] --> SERVER_INFO
+    SERVER_INFO: 1. Recv a information of a single dir from client;
+    SERVER_INFO: 2. Compare the corresponding information of local database, send reply based on situation.
+    SERVER_INFO --> CLIENT_INFO: 2
+    SERVER_INFO --> RECV_FILES : if reply is DI_NEED_ALL
+    SERVER_INFO --> RECV_TUPLES_AND_COMPARE: if reply is DI_NEED_COMPARE
+    SERVER_INFO --> [*] : if reply is DI_NO_NEED_DELIVER
+
+    note top of SERVER_INFO
+    The Situation is:
+        If There has already a tuple of this dir, compare two tuples:
+            if modify time is mismatch, server should compare the files of this dir with client, but now just return a signal to client: DI_NEED_COMPARE;
+            if modify time is match, return: DI_NO_NEED_DELIVER;
+        If There not exist in database, it means server need all files of it, return: DI_NEED_ALL;
+    end note
+
+
+    RECV_FILES: Loop and recv single file until sending process of client is done
+    RECV_FILES --> [*]
+
+    RECV_TUPLES_AND_COMPARE: Compare the recv tuples with local database,
+    RECV_TUPLES_AND_COMPARE: Store filepath as a node, add filepath to file_need_list
+    RECV_TUPLES_AND_COMPARE --> SERVER_FILES_NEED
+
+    SERVER_FILES_NEED: 1. Send only one node of file_need_list at a time (give client a filepath)
+    SERVER_FILES_NEED: 2. After client remind, recv single file (Let the modoule 'recv_single_file' to handle it).
+    SERVER_FILES_NEED --> [*]
+    SERVER_FILES_NEED --> CLIENT_FILES_NEED : 1
+
+
+
+}
+
+
+@enduml

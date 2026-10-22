@@ -1,0 +1,25 @@
+@startuml
+
+actor User
+
+package SOFTWARE_SET {
+    usecase config_path as "Config the specific send paths and receive paths"
+    usecase config_speed as "Config speed of sync"
+}
+
+note left of (config_speed)
+    if you prefer performance, rise up it;
+    otherwise, reduce it can lower CPU background usage.
+end note
+
+note right of (config_path)
+    you can link different dirs to sync
+end note
+
+
+User -down-> config_path
+User -down-> config_speed
+
+
+
+@enduml
