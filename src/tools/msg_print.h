@@ -19,8 +19,7 @@ void
 msg_wrn_f(const char * msg, ...);
 void
 msg_dbg_f(const char * file, const char * func, const int line, const char *msg, ...);
-// 说明: 使用stderr输出格式化后的错误信息, 输出完成后不退出（应交给调用者处理）;
-// 注意: 若结合perror使用, 应该在perror后调用;
+
 void
 msg_err_f(const char *msg, ...);
 void

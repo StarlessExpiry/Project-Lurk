@@ -1,8 +1,9 @@
 #include "core/dir_sync.hpp"
 #include "core/table_control.hpp"
 #include "deliver/deliver.h"
-#include "sys/msg_print.h"
+#include "tools/msg_print.h"
 #include "tools/get_config.h"
+#include "tools/performance_test.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -338,8 +339,12 @@ dir_sync_thread(void * thread_no)
         }
         MSG_DBG_F("Server_ip = %s, deliver_file_port = %hu, begin sync dir: '%s'", server_ip_str, deliver_port, node.c_str());
 
+        Performance_test    pf_test;
+        pf_test.begin();
         Sync_dir_sender     sender(sync_dir_socket, deliver_file_port, ST_COMMON,  node.c_str(), verify_dir, getpid());
         bool                sync_success_flag = true;
+        pf_test.end();
+        printf("[lurk client] Sync dir %s costs %f cpu seconds, %f actual seconds\n", node.c_str(), pf_test.get_times().cpu_duration, pf_test.get_times().time_duration);
         if ( sender.sync_start() == false) {
             MSG_DBG_F("dir sync meet error");
             printf("[lurk client] 😰sync dir '%s' meet error\n", node.c_str());

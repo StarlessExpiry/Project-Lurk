@@ -10,7 +10,7 @@
 
 
 extern "C" {
-    #include "sys/msg_print.h"
+    #include "tools/msg_print.h"
     #include "tools/makedir.h"
     #include <sys/stat.h>
     #include <sys/types.h>

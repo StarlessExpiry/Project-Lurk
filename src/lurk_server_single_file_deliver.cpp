@@ -1,6 +1,7 @@
 #include "deliver/deliver.h"
 #include "deliver/file_deliver.h"
 #include "tools/get_config.h"
+#include "tools/msg_print.h"
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -8,7 +9,6 @@
 #include <string.h>
 
 extern "C" {
-    #include "sys/msg_print.h"
     #include <arpa/inet.h>
     #include <netinet/in.h>
     #include <sys/socket.h>

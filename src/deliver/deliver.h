@@ -1,10 +1,7 @@
 #pragma once
-#include "../sys/msg_print.h"
-#include "../sys/io.h"
-#include "../sys/syserrno.h"
-#include "../tools/sha.h"
-#include "../sys/pools.h"
-#include "../deps/sqlite/sqlite3.h"
+#include "tools/msg_print.h"
+#include "tools/sha.h"
+#include "deps/sqlite/sqlite3.h"
 #include <fts.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -85,22 +82,22 @@ typedef enum {
 
 // bool
 // deliver_config(int sockfd, sock_tag_t socktag);
-// 
+//
 // bool
 // deliver(int header_tag, const void * deliver_data, size_t deliver_data_len);
-// 
+//
 // bool
 // deliver_scatter(int hedear_tag, const struct iovec * data_iov, int data_iov_cnt);
-// 
+//
 // // bool
 // // deliver_peek_header(int sockfd, sock_tag_t sock_tag, deliver_header_t * header, int * empty_flag);
-// 
+//
 // // bool
 // // deliver_get_header(deliver_header_t * header);
 // bool
 // deliver_get_header(deliver_header_t * header, int * empty_flag);
-// 
-// 
+//
+//
 // bool
 // deliver_get_data(void * data, int data_len, int * empty_flag);
 

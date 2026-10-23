@@ -1,5 +1,5 @@
 #include "deliver/deliver.h"
-#include "sys/msg_print.h"
+#include "tools/msg_print.h"
 #include "deliver/file_deliver.h"
 #include "tools/get_config.h"
 #include <cstddef>
@@ -14,6 +14,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <time.h>
 
 // argv[1] : socktag
 // argv[2] : deliver_file_port
@@ -60,7 +61,7 @@ int main(int argc, char * argv[])
     }
     if ( (deliver_file_port = strtol(argv[2], NULL, 10)) == 0) {
         perror("[send single file process]");
-        // 
+        //
         // printf("Deliver file port format error\n");
         // goto failed;
     }
@@ -108,19 +109,18 @@ int main(int argc, char * argv[])
     } else if (socktag == ST_UNIX) {
 
     }
-    // char basepath_hash[65];
-    // memset(basepath_hash, 0, sizeof(basepath_hash));
-    // sha256(basepath_hash, "./send", 6);
+
+
     if ( send_single_file(sockfd, socktag, filepath, basepath_len, basepath_hash, verify_path) == false){
         printf("[send single file process]: send file '%s' failed\n", filepath);
-        goto failed;
     }
 
-    
+
+
     if (sockfd != 0) {
         close(sockfd);
     }
-    
+
     // printf("[send single file process]: send file '%s' success\n", filepath);
     return EXIT_SUCCESS;
 failed:

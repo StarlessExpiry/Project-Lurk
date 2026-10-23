@@ -238,6 +238,15 @@ send_single_file(int sockfd, sock_tag_t socktag, const char * filepath, int base
                 }
                 case PROCESS_SEND_BLOCK: {
                     MSG_DBG("Turn into PROCESS_SEND_BLOCK");
+                    // for cpu times
+                    clock_t cpu_start, cpu_end;
+                    double cpu_duration;
+
+                    // for actual times (seconds)
+                    struct timespec time_start, time_end;
+                    double time_duration;
+                    clock_gettime(CLOCK_MONOTONIC, &time_start);
+                    cpu_start = clock();
                     int i;
                     for (i = 0; i < tsd->file_stat.st_size / tsd->block_len_set; i++) {
                         printf("%s: [ %3d%% ]\r", filepath, (i * 100)/(int)(tsd->file_stat.st_size/tsd->block_len_set));
@@ -250,6 +259,12 @@ send_single_file(int sockfd, sock_tag_t socktag, const char * filepath, int base
                             goto failed;
                     }
                     printf("%s: [ %3d%% ]\n", filepath, 100);
+
+                    cpu_end = clock();
+                    clock_gettime(CLOCK_MONOTONIC, &time_end);
+                    cpu_duration = (double)(cpu_end - cpu_start) / CLOCKS_PER_SEC;
+                    time_duration = (time_end.tv_sec - time_start.tv_sec) + (time_end.tv_nsec - time_start.tv_nsec) / 1e9;
+                    printf("send file '%s' cost %f cpu seconds, %f actual seconds\n", tsd->file_path, cpu_duration, time_duration);
                     deliver(tsd->sockfd, tsd->socktag, DHT_FILE_BLOCK, NULL, 0); // send finish inform
                     // send_block(0);
                     goto success;

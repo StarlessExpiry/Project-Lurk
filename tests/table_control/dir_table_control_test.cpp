@@ -1,6 +1,6 @@
-#include "../../src/core/table_control.hpp"
-#include "../../src/sys/msg_print.h"
-#include "../../src/tools/sha.h"
+#include "core/table_control.hpp"
+#include "tools/msg_print.h"
+#include "tools/sha.h"
 #include <cassert>
 #include <cstdlib>
 #include <cstring>

@@ -1,5 +1,4 @@
 #include "msg_print.h"
-#include "syserrno.h"
 #include <syslog.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -13,7 +12,8 @@
 #endif
 
 
-extern int daemon_proc;
+// for future use
+int daemon_proc = 0;
 
 static char *
 format_msg_dbg(const char * msg, const char * flag, const char * file, const char * func, const int line)
@@ -82,7 +82,7 @@ msg_print(FILE * io, int level, char * new_msg, va_list vl)
             // do nothing
         } else if (io == stdout) {
             fflush(io);
-        } else { 
+        } else {
             fflush(io);
         }
     }
@@ -155,24 +155,24 @@ void msg_info_f(const char *msg, ...)
     va_end(args);
 }
 
-void
-msg_print_error_dbg(const char * file, const char * func, const int line)
-{
-    char    buf_tmp[1024];
-    char *  msg;
-
-    strsyserror(syserrno, buf_tmp, sizeof(buf_tmp));
-    msg = format_msg_dbg(buf_tmp, "[Debug]   ", file, func, line);
-    msg_print(stderr, LOG_DEBUG, msg, NULL);
-}
-
-void
-msg_print_error()
-{
-    char    buf_tmp[1024];
-    char *  msg;
-
-    strsyserror(syserrno, buf_tmp, sizeof(buf_tmp));
-    msg = format_msg(buf_tmp, "[Error]   ");
-    msg_print(stderr, LOG_ERR, msg, NULL);
-}
+// void
+// msg_print_error_dbg(const char * file, const char * func, const int line)
+// {
+//     char    buf_tmp[1024];
+//     char *  msg;
+//
+//     strsyserror(syserrno, buf_tmp, sizeof(buf_tmp));
+//     msg = format_msg_dbg(buf_tmp, "[Debug]   ", file, func, line);
+//     msg_print(stderr, LOG_DEBUG, msg, NULL);
+// }
+//
+// void
+// msg_print_error()
+// {
+//     char    buf_tmp[1024];
+//     char *  msg;
+//
+//     strsyserror(syserrno, buf_tmp, sizeof(buf_tmp));
+//     msg = format_msg(buf_tmp, "[Error]   ");
+//     msg_print(stderr, LOG_ERR, msg, NULL);
+// }

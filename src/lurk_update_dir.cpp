@@ -1,8 +1,9 @@
 #include "core/table_control.hpp"
-#include "sys/msg_print.h"
+#include "tools/msg_print.h"
 #include "tools/makedir.h"
 #include "tools/sha.h"
 #include "tools/get_config.h"
+#include "tools/performance_test.hpp"
 #include <algorithm>
 #include <cstddef>
 #include <cstdio>
@@ -127,6 +128,10 @@ int main(int argc, char * argv[])
     File_table_controller file_table_ctrl;
     file_table_ctrl.bind(nullptr, table_name);
 
+
+    Performance_test    pf_test;
+    pf_test.begin();
+
     // start traverse
     uint64_t newest_update_time = traverse_dir(file_table_ctrl, dir_paths, dir_tuple->dirpath_hash);
 
@@ -162,6 +167,9 @@ int main(int argc, char * argv[])
     // MSG_DBG("ALL Done, update success");
 
     printf("[Update process] 😲update dir '%s' success\n", dirpath);
+
+    pf_test.end();
+    printf("[Update process] Sync dir %s costs %f cpu seconds, %f actual seconds\n", dirpath, pf_test.get_times().cpu_duration, pf_test.get_times().time_duration);
 
     return EXIT_SUCCESS;
 }
@@ -411,7 +419,7 @@ thread_make(int no)
 void *
 file_update_thread(void * arg)
 {
-    bool make_verify_file(const char * filepath, const char * verify_filename, long modify_time, size_t file_size);
+    bool make_verify_file(const char * filepath, const char * verify_filename, long modify_time, uint64_t file_size);
 
     while (1) {
         pthread_mutex_lock(&fu_list.filepath_list_mutex);
@@ -432,7 +440,12 @@ file_update_thread(void * arg)
         pthread_mutex_unlock(&fu_list.filepath_list_mutex);
 
         // printf("[Update process] 😐update file '%s'\n", node.filepath.c_str());
+        Performance_test    pf_test;
+        pf_test.begin();
         bool make_rtn = make_verify_file(node.filepath.c_str(), node.verirfy_filename.c_str(), node.modify_time, node.file_size);
+        pf_test.end();
+        printf("[Update process] Update file %s costs %f cpu seconds, %f actual seconds (%f)\n",
+                            node.filepath.c_str(), pf_test.get_times().cpu_duration, pf_test.get_times().time_duration, calculate_throughout(node.file_size, pf_test.get_times().time_duration));
         if (make_rtn == false) {
             printf("[Update process] 😥update file '%s' failed\n", node.filepath.c_str());
         } else {
@@ -443,7 +456,7 @@ file_update_thread(void * arg)
 }
 
 bool
-make_verify_file(const char * filepath, const char * verify_filename, long modify_time, size_t file_size)
+make_verify_file(const char * filepath, const char * verify_filename, long modify_time, uint64_t file_size)
 {
     dir_calculate_verify_flag = true;
     clock_t     start_time, end_time;
