@@ -2,7 +2,7 @@
 #include "tools/get_config.h"
 #include "tools/makedir.h"
 #include "tools/sha.h"
-#include "sys/msg_print.h"
+#include "tools/msg_print.h"
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>

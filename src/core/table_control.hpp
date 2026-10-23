@@ -9,6 +9,8 @@ extern "C" {
     #include "sqlite/sqlite3.h"
 }
 
+// TODO: Change to Builder Design Patterns
+
 class DB_controller {
 public:
     // Create db and table (depending on the situation)

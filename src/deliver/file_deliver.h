@@ -5,11 +5,9 @@ extern "C" {
 #endif
 
 #include "deliver.h"
-#include "../sys/msg_print.h"
-#include "../sys/io.h"
-#include "../sys/syserrno.h"
-#include "../tools/sha.h"
-#include "../deps/sqlite/sqlite3.h"
+#include "tools/msg_print.h"
+#include "tools/sha.h"
+#include "deps/sqlite/sqlite3.h"
 #include <fts.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -84,7 +82,7 @@ typedef struct  {
     int         fdb_no;                 // 块的编号, 从0开始
     // int         fdb_remain;             // 剩余的数据块数, 每一次发送都会更新
     int         fdb_data_len;
-    // int32_t     fdb_data_len_set;       // 发送端设置发送时的块大小
+    // int32_t     fdb_data_len_set;       // block size
     char        fdb_data[];            // 一次读取-发送最多256KB
 } file_data_block_t;
 
@@ -95,10 +93,9 @@ typedef enum {
     FI_NEED_ALL
 } fi_stat_t;
 
-// 用于回复
+// for reply
 typedef struct {
     fi_stat_t   fi_stat;
-    // char        fi_msg[20];     // 如果失败, 则此成员返回字符串格式失败信息
 } file_info_ack_t;
 
 
