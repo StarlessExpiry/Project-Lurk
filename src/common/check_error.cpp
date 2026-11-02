@@ -4,7 +4,16 @@
 #include <cstdio>
 #include <cstring>
 
-int check_common_error(int func_rtn, const char * func_name)
+
+bool check_common_error(bool func_rtn, const char * error_msg)
+{
+    if (func_rtn == false) {
+        throw std::runtime_error(error_msg);
+    };
+    return true;
+}
+
+int check_syscall_error(int func_rtn, const char * func_name)
 {
     if (func_rtn == -1) {
         char error_str[50];

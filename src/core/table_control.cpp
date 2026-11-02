@@ -5,8 +5,8 @@
 #include <queue>
 #include <string>
 extern "C" {
-    #include "tools/makedir.h"
-    #include "tools/msg_print.h"
+    #include "utils/makedir.h"
+    #include "common/msg_print.h"
     #include <fts.h>
     #include <sys/stat.h>
     #include <sys/types.h>

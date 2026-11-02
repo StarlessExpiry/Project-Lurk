@@ -1,14 +1,17 @@
-#include "tools/get_config.h"
+#include "config/get_config.hpp"
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 int main()
 {
-    if ( init_config_client() == false) {
-        printf("😰 lurk init failed\n");
-        return EXIT_FAILURE;
-    }
-
-
+try {
+    init_config_client();
     printf("🫡 lurk init success\n");
     return EXIT_SUCCESS;
+} catch (YAML::Exception & e) {
+    
+}
+    
+
+
 }

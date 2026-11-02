@@ -1,6 +1,10 @@
 #include "file_deliver.h"
 #include "deliver.h"
-#include "../tools/makedir.h"
+#include "utils/makedir.h"
+#include "common/msg_print.h"
+#include <errno.h>
+#include <time.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <sys/mman.h>
 #include <stdio.h>
@@ -8,6 +12,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 
 
@@ -341,7 +346,6 @@ success:
         tsd->verify_stream = NULL;
     }
 
-    // 确保文件关闭后再设置访问时间(忽略)和修改时间
     if ( utimensat(AT_FDCWD, tsd->filepath, tsd->timespecs, AT_SYMLINK_NOFOLLOW) != 0) {
         MSG_DBG_F("Set modify time of file '%s' failed, error is %s", tsd->filepath, strerror(errno));
         return false;

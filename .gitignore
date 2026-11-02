@@ -1,5 +1,5 @@
 .DS_Store
-deploy/bin/*
+bin/
 obj/
 obj-test/
 build/

@@ -1,7 +1,7 @@
 #include "deliver/deliver.h"
-#include "tools/msg_print.h"
+#include "common/msg_print.h"
 #include "deliver/file_deliver.h"
-#include "tools/get_config.h"
+#include "config/get_config.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -54,11 +54,12 @@ int main(int argc, char * argv[])
     }
 
     memset(server_ip_str, 0, sizeof(server_ip_str));
-    if ( get_config_server_ip_client(server_ip_str) == false) {
-        perror("[send single file process]");
-        // printf("Could not find 'server_ip' in config file\n");
-        // goto failed;
-    }
+    // if ( get_config_server_ip(server_ip_str) == false) {
+    //     perror("[send single file process]");
+    //     // printf("Could not find 'server_ip' in config file\n");
+    //     // goto failed;
+    // }
+    get_config_server_ip(server_ip_str, sizeof(server_ip_str));
     if ( (deliver_file_port = strtol(argv[2], NULL, 10)) == 0) {
         perror("[send single file process]");
         //

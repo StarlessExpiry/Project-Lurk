@@ -1,5 +1,5 @@
 #include "makedir.h"
-#include "tools/msg_print.h"
+#include "common/msg_print.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

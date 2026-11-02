@@ -5,29 +5,7 @@ extern "C" {
 #endif
 
 #include "deliver.h"
-#include "tools/msg_print.h"
-#include "tools/sha.h"
-#include "deps/sqlite/sqlite3.h"
-#include <fts.h>
 #include <stdint.h>
-#include <sys/types.h>
-#include <time.h>
-#include <sys/stat.h>
-
-#include <stdint.h>
-#include <stdio.h>
-#include <sys/stat.h>
-#include <errno.h>
-#include <unistd.h>
-#include <pthread.h>
-#include <sys/stat.h>
-#include <string.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <math.h>
-#include <arpa/inet.h>
 
 
 

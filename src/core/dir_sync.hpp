@@ -2,13 +2,16 @@
 #include "deliver/deliver.h"
 
 #include "table_control.hpp"
+#include <algorithm>
+#include "common/deleter.hpp"
 #include <cstdint>
+#include <cstring>
 #include <list>
-#include <spawn.h>
-#include <string>
+#include <string.h>
+#include <memory>
+#include <pthread.h>
 
 extern "C" {
-    #include <pthread.h>
 }
 
 
@@ -46,47 +49,68 @@ enum deliver_dir_tag : uint8_t {
 };
 
 
-typedef enum : uint8_t {
-    DI_NO_NEED_DELIVER = 0x01,
-    DI_FAILED          = 0x02,
-    DI_NEED_COMPARE    = 0x03,
-    DI_NEED_ALL        = 0x04
-} di_stat_t;
+// typedef enum : uint8_t {
+//     DI_NO_NEED_DELIVER = 0x01,
+//     DI_FAILED          = 0x02,
+//     DI_NEED_COMPARE    = 0x03,
+//     DI_NEED_ALL        = 0x04
+// } di_stat_t;
+//
+// typedef struct {
+//     di_stat_t   di_stat;
+//     // char        fi_msg[20];     // 如果失败, 则此成员返回字符串格式失败信息
+// } dir_info_ack_t;
 
-typedef struct {
-    di_stat_t   di_stat;
-    // char        fi_msg[20];     // 如果失败, 则此成员返回字符串格式失败信息
-} dir_info_ack_t;
+
 
 class Sync_dir_sender {
+    friend class Sync_dir_sender_builder;
+    friend class DirSendInfoState;
+    friend class DirSendFilesState;
+    friend class DirSendCompareState;
+    // friend class DirSendTuplesState;
+    friend class DirSendFilesNeededState;
+    friend class DirSendCloseState;
 public:
     // config sockfd and socktag of deliver series functions,
     // create Sender_map_table, if it is not exist in db
-    Sync_dir_sender(int sockfd, uint16_t deliver_file_port, sock_tag_t socktag, const char * dirpath_from_database, const char * verify_rootpath, pid_t leader_pid);
+    // Sync_dir_sender(int sockfd, uint16_t deliver_file_port, sock_tag_t socktag, const char * dirpath_from_database, const char * verify_rootpath, pid_t leader_pid);
     virtual bool sync_start();
-    Sync_dir_sender() = delete;
     ~Sync_dir_sender();
 private:
-    virtual bool send_info();
-    virtual bool get_info_ack();
-    virtual bool send_unit();
-    virtual bool send_unit_entrys();
-    virtual bool recv_unit_need();
-    virtual bool send_unit_need();
+    // Sync_dir_sender() {};
+    // virtual bool send_info();
+    // virtual bool get_info_ack();
+    // virtual bool send_unit();
+    // virtual bool send_unit_entrys();
+    // virtual bool recv_unit_need();
+    // virtual bool send_unit_need();
+// private:
+//     void set_sockfd(int sockfd) { this->sockfd = sockfd; }
+//     void set_delver_port(uint16_t deliver_file_port) { this->deliver_file_port = deliver_file_port; }
+//     void set_socktag(sock_tag_t socktag) { this->socktag = socktag; }
+//     void set_dirpath_from_database(const char * dirpath_from_database) {
+//         strncpy(this->dirpath_from_database, dirpath_from_database, sizeof(this->dirpath_from_database));
+//     }
+//     void set_verify_rootpath(const char * verify_rootpath) {
+//         strncpy(this->verify_rootpath, verify_rootpath, sizeof(this->verify_rootpath));
+//     }
+//     void set_leader_pid(pid_t leader_pid) { this->leader_pid = leader_pid; }
 // private:
 //     bool generate_info(int update_flag);
 private:
     Dir_table_controller    dir_table_controller;
     File_table_controller   file_table_controller;
     char                    dirpath_from_database[4096];
-    int                     sockfd;
+    std::unique_ptr<int, fd_deleter>    sockfdp;
+    // int                     sockfd;
     // int                     file_sockfd;
     uint16_t                deliver_file_port;
     sock_tag_t              socktag;
     // char                    dest_address[255];
-    size_t                  message_len;
-    int                     message_empty_flag;
-    dir_info_ack_t          info_ack;
+    // size_t                  message_len;
+    // int                     message_empty_flag;
+    // dir_info_ack_t          info_ack;
     // int                     send_info_flag;
     // int                     entry_len_set;
     // dir_entry_set_t         entry_set;
@@ -94,53 +118,85 @@ private:
     uint16_t                basepath_len = 0;
     char                    basepath_hash[65];
     char                    verify_rootpath[4096];
-    char                    cur_verify_dirpath[4096];
+    // char                    cur_verify_dirpath[4096];
     char                    db_path[4096];
-
-
-    std::list<std::string>  file_send_list;
-
     pid_t                   leader_pid;
+
+
+    // std::list<std::string>  file_send_list;
+
 
     // pthread_mutex_t         list_mutex;
     // pthread_cond_t          list_cond;
 };
 
+class Sync_dir_sender_builder {
+public:
+    Sync_dir_sender_builder() : sender(new Sync_dir_sender) {};
+
+    Sync_dir_sender_builder& set_sockfd(std::unique_ptr<int, fd_deleter> && sockfdp) {
+        sender->sockfdp = std::move(sockfdp);
+        return *this;
+    }
+    Sync_dir_sender_builder& set_deliver_port(uint16_t deliver_file_port) {
+        sender->deliver_file_port = deliver_file_port;
+        return *this;
+    }
+    // Sync_dir_sender_builder& set_socktag(sock_tag_t socktag) { sender->set_socktag(socktag); return *this; }
+    Sync_dir_sender_builder& set_dirpath_from_database(const char * dirpath_from_database) {
+        strncpy(sender->dirpath_from_database, dirpath_from_database, sizeof(sender->dirpath_from_database));
+        return *this;
+    }
+    Sync_dir_sender_builder& set_verify_rootpath(const char * verify_rootpath) {
+        strncpy(sender->verify_rootpath, verify_rootpath, sizeof(sender->verify_rootpath));
+        return *this;
+    }
+    Sync_dir_sender_builder& set_leader_pid(pid_t leader_pid) {
+        sender->leader_pid = leader_pid;
+        return *this;
+    }
+    std::unique_ptr<Sync_dir_sender> build() {
+        return std::move(sender);
+    }
+
+private:
+    std::unique_ptr<Sync_dir_sender> sender;
+};
+
 class Sync_dir_receiver {
+    friend class DirRecvState;
+    friend class DirRecvInfoState;
+    friend class DirRecvFilesState;
+    friend class DirRecvCompareState;
+    friend class DirRecvFilesNeededState;
+    friend class DirRecvCloseState;
 public:
     Sync_dir_receiver(int sockfd, sock_tag_t socktag, pid_t leader_pid);
     virtual bool sync_start();
     Sync_dir_receiver() = delete;
     ~Sync_dir_receiver();
-private:
-    virtual bool recv_info();
-    virtual bool send_info_ack();
-    virtual bool recv_unit();
-    virtual bool recv_unit_and_compare();
-    virtual bool send_unit_need();
-    virtual bool recv_unit_need();
-
+// private:
+//     virtual bool recv_info();
+//     virtual bool send_info_ack();
+//     virtual bool recv_unit();
+//     virtual bool recv_unit_and_compare();
+//     virtual bool send_unit_need();
+//     virtual bool recv_unit_need();
+//
 private:
     Dir_table_controller    dir_table_controller;
     File_table_controller   file_table_controller;
 
+    std::unique_ptr<int, fd_deleter>    sockfdp;
     dir_tuple_t *          dir_tuple;
     // file_tuples_t *         file_tuples;
 
-    int                     sockfd;
     int                     file_sockfd;
     sock_tag_t              socktag;
     size_t                  message_len;
     int                     message_empty_flag;
-    dir_info_ack_t          info_ack;
 
-    // typedef struct {
-    //     std::string     filepath;
-    //     file_tuple_t    file_tuple;
-    // } file_need_node_t;
     std::list<std::string>  file_need_list;
-    // char                    recv_rootpath[4096],    cur_recv_dirpath[4096];
-    // char                    verify_rootpath[4096],  cur_verify_dirpath[4096];
 
 
     pid_t                   leader_pid;
