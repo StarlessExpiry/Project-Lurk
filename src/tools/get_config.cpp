@@ -292,7 +292,7 @@ bool get_config_verifypath_server(char * verify_path)
     return true;
 }
 
-bool get_config_recv_path_server(char * recv_path)
+void get_config_recv_path_server(char * recv_path)
 {
     try {
     if ( reread_config_server() == false)
