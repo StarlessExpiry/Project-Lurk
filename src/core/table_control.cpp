@@ -4,24 +4,22 @@
 #include <cstring>
 #include <queue>
 #include <string>
-extern "C" {
-    #include "utils/makedir.h"
-    #include "common/msg_print.h"
-    #include <fts.h>
-    #include <sys/stat.h>
-    #include <sys/types.h>
-    #include <time.h>
-    #include <unistd.h>
-    #include <pthread.h>
-    #include <sys/stat.h>
-    #include <string.h>
-    #include <fcntl.h>
-    #include <stdio.h>
-    #include <stdlib.h>
-    #include <dirent.h>
-    #include <sys/types.h>
-    #include <fts.h>
-}
+#include "utils/makedir.h"
+#include "common/msg_print.h"
+#include <fts.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <sys/stat.h>
+#include <string.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <dirent.h>
+#include <sys/types.h>
+#include <fts.h>
 
 
 sqlite3 * DB_controller::_db = nullptr;

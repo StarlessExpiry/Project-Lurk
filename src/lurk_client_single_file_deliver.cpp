@@ -1,6 +1,7 @@
-#include "deliver/deliver.h"
+// #include "core/dir_sync.hpp"
 #include "common/msg_print.h"
-#include "deliver/file_deliver.h"
+#include "core/file_deliver.hpp"
+#include "common/check_error.hpp"
 #include "config/get_config.hpp"
 #include <cstddef>
 #include <cstdint>
@@ -15,6 +16,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <time.h>
+#include <iostream>
 
 // argv[1] : socktag
 // argv[2] : deliver_file_port
@@ -36,12 +38,9 @@ int main(int argc, char * argv[])
     uint16_t                basepath_len;
     char                    basepath_hash[65];
     char                    verify_path[4096];
-
-
-
+try{
     if (argc != 7) {
-        MSG_DBG_F("parameter is not enough, current is %d", argc);
-        return EXIT_FAILURE;
+        throw std::runtime_error("parameter is not enough, current is " + std::to_string(argc));
     }
 
     if ( strcmp(argv[1], "ST_COMMON") == 0) {
@@ -49,22 +48,14 @@ int main(int argc, char * argv[])
     } else if ( strcmp(argv[1], "ST_UNIX") == 0) {
         socktag = ST_UNIX;
     } else {
-        MSG_DBG_F("socktag is not specified");
-        return EXIT_FAILURE;
+        throw std::runtime_error("socktag is not specified");
     }
 
     memset(server_ip_str, 0, sizeof(server_ip_str));
-    // if ( get_config_server_ip(server_ip_str) == false) {
-    //     perror("[send single file process]");
-    //     // printf("Could not find 'server_ip' in config file\n");
-    //     // goto failed;
-    // }
+    
     get_config_server_ip(server_ip_str, sizeof(server_ip_str));
     if ( (deliver_file_port = strtol(argv[2], NULL, 10)) == 0) {
-        perror("[send single file process]");
-        //
-        // printf("Deliver file port format error\n");
-        // goto failed;
+        throw std::runtime_error("Deliver file port format error");
     }
 
     memset(filepath, 0, sizeof(filepath));
@@ -72,59 +63,38 @@ int main(int argc, char * argv[])
 
     basepath_len = strtol(argv[4], NULL, 10);
     if (basepath_len == 0) {
-        perror("[send single file process]");
-        return EXIT_FAILURE;
+        throw std::runtime_error("basepath_len format error");
     }
-
     memset(basepath_hash, 0, sizeof(basepath_hash));
     strncpy(basepath_hash, argv[5], strlen(argv[5]));
     basepath_hash[64] = 0;
-
-
+    
     memset(verify_path, 0, sizeof(verify_path));
     strncpy(verify_path, argv[6], strlen(argv[6]));
 
-    // server_port = strtol(argv[3], NULL, 10);
-
     if (socktag == ST_COMMON) {
-        if ( (sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-            perror("[send single file process]");
-            goto failed;
-        }
-
+        sockfd = check_syscall_error(socket(AF_INET, SOCK_STREAM, 0), "socket");
         servaddr.sin_family = AF_INET;
         servaddr.sin_port = htons(deliver_file_port);
-
-        if (inet_pton(AF_INET, server_ip_str, &servaddr.sin_addr) != 1) {
-            perror("[send single file process]");
-            return EXIT_FAILURE;
-        }
-
-        if ( (connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr))) == -1) {
-            perror("[send single file process]");
-            // printf("[-send_single_file_process-]: send file '%s' failed, error is %s\n", filepath, strerror(errno));
-            return EXIT_FAILURE;
-        }
-
-        // printf("[send single file process] connect server %s::%hu success\n", server_ip_str, deliver_file_port);
+        inet_pton(AF_INET, server_ip_str, &servaddr.sin_addr);
+        check_syscall_error(connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)), "connect");
     } else if (socktag == ST_UNIX) {
+        
 
     }
-
 
     if ( send_single_file(sockfd, socktag, filepath, basepath_len, basepath_hash, verify_path) == false){
         printf("[send single file process]: send file '%s' failed\n", filepath);
     }
 
-
-
-    if (sockfd != 0) {
-        close(sockfd);
-    }
-
-    // printf("[send single file process]: send file '%s' success\n", filepath);
+    close(sockfd);
+    
     return EXIT_SUCCESS;
-failed:
+} catch (std::runtime_error & e) {
+    std::cerr << "[lurk-client] sync dir catch runtime error => " << e.what() << std::endl;
+} catch (std::exception & e) {
+    std::cerr << "[lurk-client] sync dir catch other error => " << e.what() << std::endl;
+}
     if (sockfd != 0) {
         close(sockfd);
     }

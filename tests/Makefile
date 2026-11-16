@@ -8,13 +8,11 @@ export CC CFLAGS CXX CXXFLAGS OBJ_DIR
 .PHONY: all clean exec_module
 
 SUB_DIR := 	$(SRC_DIR)/core \
-			$(SRC_DIR)/deliver \
 			$(SRC_DIR)/deps/sqlite \
 			$(SRC_DIR)/deps/yaml-cpp \
-			$(SRC_DIR)/net \
-			$(SRC_DIR)/servs \
-			$(SRC_DIR)/sys \
-			$(SRC_DIR)/tools
+			$(SRC_DIR)/utils \
+			$(SRC_DIR)/config \
+			$(SRC_DIR)/common
 
 # TARGETS_DIR := ./execute
 # TARGETS := client server update deliver_server lurk_show_dirs lurk_set_dirs lurk_init
@@ -30,7 +28,6 @@ exec_module:
     	echo "== make dir '$$dir' =="; \
 		$(MAKE) -C $$dir all; \
 	done
-
 
 
 # $(TARGETS): $(TARGETS_DIR)/%: $(SRC_DIR)/%.cpp $(wildcard $(addsuffix /$(OBJ_DIR)/*.o, $(SUB_DIR)))

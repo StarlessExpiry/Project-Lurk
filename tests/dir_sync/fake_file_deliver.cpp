@@ -1,5 +1,5 @@
-#include "deliver/deliver.h"
-#include "deliver/file_deliver.h"
+#include "core/deliver.h"
+#include "core/file_deliver.hpp"
 
 // Stub
 bool

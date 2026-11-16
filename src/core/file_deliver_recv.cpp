@@ -1,4 +1,4 @@
-#include "file_deliver.h"
+#include "file_deliver.hpp"
 #include "deliver.h"
 #include "utils/makedir.h"
 #include "common/msg_print.h"
@@ -54,7 +54,7 @@ typedef struct {
 static void
 tsd_destructor(void * ptr)
 {
-    tsd_t * tsd = ptr;
+    tsd_t * tsd = (tsd_t *)ptr;
     if ( tsd->file_stream != NULL)
         fclose(tsd->file_stream);
     if ( tsd->verify_stream != NULL)
@@ -118,8 +118,8 @@ recv_single_file(int sockfd, sock_tag_t socktag, const char * path_to_recv, cons
 
 
     pthread_once(&tsd_once_key, tsd_once);
-    if ( (tsd = pthread_getspecific(tsd_key)) == NULL) {
-        tsd = calloc(1, sizeof(tsd_t));
+    if ( (tsd = (tsd_t *)pthread_getspecific(tsd_key)) == NULL) {
+        tsd = (tsd_t *)calloc(1, sizeof(tsd_t));
         pthread_setspecific(tsd_key, tsd);
     }
 
@@ -401,7 +401,7 @@ failed:
 static bool
 recv_info(file_info_ack_t * info_ack)
 {
-    tsd_t*              tsd = pthread_getspecific(tsd_key);
+    tsd_t*              tsd = (tsd_t *)pthread_getspecific(tsd_key);
     file_info_t         inform_buf;
 
     memset(&inform_buf, 0, sizeof(inform_buf));
@@ -504,7 +504,7 @@ failed:
 static bool
 send_info_ack(file_info_ack_t * info_ack)
 {
-    tsd_t*              tsd = pthread_getspecific(tsd_key);
+    tsd_t*              tsd = (tsd_t *)pthread_getspecific(tsd_key);
     MSG_DBG_F("Send info");
     if ( (deliver(tsd->sockfd, tsd->socktag, DHT_FILE_INFORMATION, (char *)info_ack, sizeof(*info_ack))) == false)
         return false;
@@ -517,7 +517,7 @@ send_info_ack(file_info_ack_t * info_ack)
 static bool
 recv_block()
 {
-    tsd_t *                     tsd = pthread_getspecific(tsd_key);
+    tsd_t *                     tsd = (tsd_t *)pthread_getspecific(tsd_key);
     file_data_block_t           block;
 
     void *                      file_map_addr = NULL, *verify_map_addr = NULL;
@@ -581,17 +581,18 @@ failed:
 static bool
 recv_verify_and_compare()
 {
-    tsd_t *             tsd = pthread_getspecific(tsd_key);
+    tsd_t *             tsd = (tsd_t *)pthread_getspecific(tsd_key);
     file_data_block_t * verify_data_block;
     block_need_node_t * block_need_node;
     // char                verify_data_to_compare[tsd->block_len_set];
 
     char *              verify_map_addr = NULL;
     size_t              map_len;
+    int                 insert_pos = 0;
 
 
     MSG_DBG_F("tsd->message_len is %ld", tsd->message_len);
-    if ( (verify_data_block = calloc(1, tsd->message_len)) == NULL) {
+    if ( (verify_data_block = (file_data_block_t *)calloc(1, tsd->message_len)) == NULL) {
         goto failed;
     }
     if ( deliver_get_data(tsd->sockfd, tsd->socktag, (char*)verify_data_block, tsd->message_len, &tsd->message_empty_flag) == false)
@@ -607,18 +608,17 @@ recv_verify_and_compare()
         map_len = tsd->block_len_set;
     }
 
-    if ( (verify_map_addr = mmap(NULL, map_len, PROT_WRITE, MAP_SHARED, fileno(tsd->verify_stream), verify_data_block->fdb_no * tsd->block_len_set)) == MAP_FAILED) {
+    if ( (verify_map_addr = (char *)mmap(NULL, map_len, PROT_WRITE, MAP_SHARED, fileno(tsd->verify_stream), verify_data_block->fdb_no * tsd->block_len_set)) == MAP_FAILED) {
         MSG_DBG_F("mmap failed: %s", strerror(errno));
         goto failed;
     }
 
 
-    if ( (block_need_node = calloc(1, sizeof(block_need_node_t))) == NULL) {
+    if ( (block_need_node = (block_need_node_t *)calloc(1, sizeof(block_need_node_t))) == NULL) {
         goto failed;
     }
 
 
-    int insert_pos = 0;
     for (int i = 0; i < verify_data_block->fdb_data_len; i += 64) {
         if (strncmp(verify_map_addr+i, verify_data_block->fdb_data+i, 64) != 0) {
             MSG_DBG_F("block '%d' is not match，add it to block_need_list", verify_data_block->fdb_no+(i/64));
@@ -649,7 +649,7 @@ failed:
 static bool
 send_block_need()
 {
-    tsd_t *         tsd = pthread_getspecific(tsd_key);
+    tsd_t *         tsd = (tsd_t *)pthread_getspecific(tsd_key);
     if ( tsd->need_list_head.next == NULL)
         return false;
 

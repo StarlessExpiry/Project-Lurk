@@ -1,7 +1,8 @@
 #include "config/get_config.hpp"
 #include <cstdio>
 #include <cstdlib>
-#include <exception>
+#include <deps/yaml-cpp/include/yaml-cpp/yaml.h>
+#include <iostream>
 int main()
 {
 try {
@@ -9,9 +10,7 @@ try {
     printf("🫡 lurk init success\n");
     return EXIT_SUCCESS;
 } catch (YAML::Exception & e) {
-    
+    std::cerr << "[lurk init] failed to parse config file: " << e.what() << std::endl;
 }
-    
-
 
 }

@@ -1,10 +1,11 @@
 #include "core/table_control.hpp"
-#include "tools/msg_print.h"
-#include "tools/makedir.h"
-#include "tools/sha.h"
-#include "tools/get_config.h"
-#include "tools/performance_test.hpp"
+#include "common/msg_print.h"
+#include "utils/makedir.h"
+#include "common/sha.h"
+#include "config/get_config.hpp"
+#include "utils/performance_test.hpp"
 #include <algorithm>
+#include <iostream>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
@@ -17,16 +18,13 @@
 #include <string.h>
 #include <string>
 #include <unistd.h>
-extern "C" {
-    #include <fts.h>
-    #include <sys/stat.h>
-    #include "flags.h"
-    #include <sys/time.h>
-    #include <fcntl.h>
-    #include <pthread.h>
-    #include <sys/mman.h>
-
-}
+#include <fts.h>
+#include <sys/stat.h>
+#include "flags.h"
+#include <sys/time.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <sys/mman.h>
 
 typedef struct {
     std::string     verirfy_filename;
@@ -57,19 +55,12 @@ bool thread_make(int no);
 // argv[1] : dirpath
 int main(int argc, char * argv[])
 {
-    // if (argc < 2) {
-    //     return EXIT_FAILURE;
-    // }
-    // MSG_DBG_F("%d", getpagesize());
-
-    // INIT
-    // provide verify dir to update_sender_table()
-    // verify_dir = argv[1];
+try{
+    if (argc < 2)
+        throw std::runtime_error("parameter cnt is not match, current is: " + std::to_string(argc));
+    
     memset(verify_dir, 0, sizeof(verify_dir));
-    if ( get_config_verifypath_client(verify_dir) == false) {
-        MSG_DBG_F("verify path get failed");
-        return EXIT_FAILURE;
-    }
+    get_config_verifypath(verify_dir, sizeof(verify_dir));
 
     char                    dirpath[4096];
     Dir_table_controller    dir_table_ctrl;
@@ -84,13 +75,11 @@ int main(int argc, char * argv[])
     make_dir(db_dir);
 
     if ( dir_table_ctrl.bind(db_dir, "Sender_map_table") == false) {
-        printf("Database error, your verify_path is '%s', your database path is '%s'\n", verify_dir, db_dir);
-        return EXIT_FAILURE;
+        throw std::runtime_error("Open database failed, the path is: " + std::string(db_dir));
     }
 
 
     if ( (dir_tuple = (dir_tuple_t *)dir_table_ctrl.get_single_tuple(argv[1])) == nullptr) {
-        MSG_DBG_F("No specified dir in Sender_map_table, quit");
         printf("No specified dir in database\n");
         return EXIT_SUCCESS;
     }
@@ -99,12 +88,10 @@ int main(int argc, char * argv[])
     pthread_cond_init(&fu_list.filepath_list_cond, NULL);
     fu_list.traverse_done_flag = 0;
 
-
     // make 4 threads as comsumer to update specified verify file
     for(int i = 0; i < 4; i++) {
         thread_make(i);
     }
-
 
     printf("[Update process] Begin updating dir '%s'\n", dirpath);
 
@@ -128,19 +115,15 @@ int main(int argc, char * argv[])
     File_table_controller file_table_ctrl;
     file_table_ctrl.bind(nullptr, table_name);
 
-
+    // open a performance test to calculate cpu times and real times
     Performance_test    pf_test;
     pf_test.begin();
 
     // start traverse
     uint64_t newest_update_time = traverse_dir(file_table_ctrl, dir_paths, dir_tuple->dirpath_hash);
 
-    MSG_DBG_F("dir '%s': old modify time is %ld, new modify_time is %ld", dir_tuple->dirpath, dir_tuple->modify_time, newest_update_time);
-
-    // file_table_ctrl.mark_redundant_tuples();
-    // file_table_ctrl.remove_deleted_tuples();
-    MSG_DBG_F("================= End traverse dir: '%s' ========================", dir_tuple->dirpath);
-    // }
+    // MSG_DBG_F("dir '%s': old modify time is %ld, new modify_time is %ld", dir_tuple->dirpath, dir_tuple->modify_time, newest_update_time);
+    // MSG_DBG_F("================= End traverse dir: '%s' ========================", dir_tuple->dirpath);
 
     pthread_mutex_lock(&fu_list.filepath_list_mutex);
     fu_list.traverse_done_flag = 1;
@@ -164,14 +147,18 @@ int main(int argc, char * argv[])
 
     Dir_table_controller::free_tuples(dir_tuple);
 
-    // MSG_DBG("ALL Done, update success");
-
-    printf("[Update process] 😲update dir '%s' success\n", dirpath);
+    std::cout << "[lurk-update-dir] 😲update dir '" << dirpath << "' success" << std::endl;
 
     pf_test.end();
-    printf("[Update process] Sync dir %s costs %f cpu seconds, %f actual seconds\n", dirpath, pf_test.get_times().cpu_duration, pf_test.get_times().time_duration);
+    std::cout << "[lurk-update-dir] Sync dir " << dirpath << " costs " << pf_test.get_times().cpu_duration << " cpu seconds, " << pf_test.get_times().time_duration << " actual seconds" << std::endl;
 
     return EXIT_SUCCESS;
+} catch (std::runtime_error& e) {
+    std::cerr << "[lurk-update-dir] failed : " << e.what() << std::endl;
+} catch (std::exception& e) {
+    std::cerr << "[lurk-update-dir] failed : " << e.what() << std::endl;
+}
+    return EXIT_FAILURE;
 }
 
 long traverse_dir(File_table_controller & file_table_ctrl, char * dir_paths[], char dir_hash[65])
@@ -179,12 +166,10 @@ long traverse_dir(File_table_controller & file_table_ctrl, char * dir_paths[], c
     FTS *           ftsp = NULL;
     FTSENT *        node;
 
-
     // dir_hash is used as the dir in verify_dir, such as ./verify_dir/dir_hash/xxx/xxx
     // char            dir_hash[65];
     long            newest_modify_time = 0;
     int             base_len;
-
 
     // dir_paths is a "/path/to/send" no slash
     if ( (ftsp = fts_open(dir_paths, FTS_PHYSICAL | FTS_NOCHDIR, NULL)) == NULL) {
@@ -205,7 +190,6 @@ long traverse_dir(File_table_controller & file_table_ctrl, char * dir_paths[], c
         //     continue;
         // }
         // MSG_DBG_F("Now current traversal %s and %s", node->fts_accpath, node->fts_path);
-
         switch (node->fts_info) {
             case FTS_F: { // regular file
 

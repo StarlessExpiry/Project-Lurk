@@ -1,0 +1,15 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     'test/segment_tree.test'
+relocations:
+  - { offset: 0x26, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x0, symBinAddr: 0x100003AE8, symSize: 0x20 }
+  - { offset: 0x33, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x0, symBinAddr: 0x100003AE8, symSize: 0x20 }
+  - { offset: 0xA7, size: 0x8, addend: 0x0, symName: _create, symObjAddr: 0x0, symBinAddr: 0x100003B08, symSize: 0x274 }
+  - { offset: 0xC2, size: 0x8, addend: 0x0, symName: _create, symObjAddr: 0x0, symBinAddr: 0x100003B08, symSize: 0x274 }
+  - { offset: 0x208, size: 0x8, addend: 0x0, symName: _format_msg, symObjAddr: 0x0, symBinAddr: 0x100003D7C, symSize: 0x9C }
+  - { offset: 0x224, size: 0x8, addend: 0x0, symName: _format_msg, symObjAddr: 0x0, symBinAddr: 0x100003D7C, symSize: 0x9C }
+  - { offset: 0x268, size: 0x8, addend: 0x0, symName: _msg_print, symObjAddr: 0x9C, symBinAddr: 0x100003E18, symSize: 0xE8 }
+  - { offset: 0x2B6, size: 0x8, addend: 0x0, symName: _msg_dbg, symObjAddr: 0x184, symBinAddr: 0x100003F00, symSize: 0x10 }
+  - { offset: 0x2DA, size: 0x8, addend: 0x0, symName: _msg_dbg_f, symObjAddr: 0x194, symBinAddr: 0x100003F10, symSize: 0x10 }
+  - { offset: 0x54C, size: 0x8, addend: 0x0, symName: _daemon_proc, symObjAddr: 0x208, symBinAddr: 0x100008000, symSize: 0x0 }
+...

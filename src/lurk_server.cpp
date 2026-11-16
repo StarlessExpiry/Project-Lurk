@@ -1,35 +1,35 @@
-#include "tools/get_available_port.h"
-#include "tools/msg_print.h"
-#include "tools/makedir.h"
-#include <cerrno>
+#include "common/check_error.hpp"
+#include "utils/get_available_port.h"
+#include "common/msg_print.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <spawn.h>
 #include <string.h>
+#include "config/get_config.hpp"
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/tcp.h>
+#include <iostream>
 
-extern "C" {
-    #include "tools/get_config.h"
-    #include <arpa/inet.h>
-    #include <netinet/in.h>
-    #include <unistd.h>
-    #include <sys/socket.h>
-    #include <sys/types.h>
-    #include <netinet/tcp.h>
-}
 
-// for the communication of lurk_server_single_file_deliver and lurk_server_dir_sync
-// two processes use same fileno to talk
-#define SYNC_FILENO 20
+// // for the communication of lurk_server_single_file_deliver and lurk_server_dir_sync
+// // two processes use same fileno to talk
+// #define SYNC_FILENO 20
 
 static bool precreate_file_process();
 
 int main(int argc, char * argv[])
 {
+try {
     if ( precreate_file_process() == false) {
         MSG_DBG_F("create process to recv file failed");
         return EXIT_FAILURE;
+
     }
 
     struct sockaddr_in  myaddr;
@@ -37,7 +37,7 @@ int main(int argc, char * argv[])
     uint16_t            server_port;
     char                server_ip_str[20];
 
-    server_port = get_config_server_port_server();
+    server_port = get_config_server_port();
     if ( server_port == 0) {
         MSG_DBG_F("Read server_port in your config file failed");
         return EXIT_FAILURE;
@@ -47,10 +47,8 @@ int main(int argc, char * argv[])
     myaddr.sin_port = htons(server_port);
 
     memset(server_ip_str, 0, sizeof(server_ip_str));
-    if (get_config_server_ip_server(server_ip_str) == false) {
-        printf("Get server_ip in your config file failed.\n");
-        return EXIT_FAILURE;
-    }
+
+    get_config_server_ip(server_ip_str, sizeof(server_ip_str));
 
     inet_pton(AF_INET, server_ip_str, &myaddr.sin_addr);
 
@@ -103,11 +101,10 @@ int main(int argc, char * argv[])
             // here to creat a sync process
             pid_t   pid = fork();
             if ( pid == -1) {
-                MSG_DBG_F("Fork error: %s", strerror(errno));
-            } else if (pid == 0) {// child
+                std::cerr << "[lurk-server] failed to fork a new process: " << strerror(errno) << std::endl;
+            } else if (pid == 0) {// child will
                 execl("./lurk_server_dir_sync", "lurk_server_dir_sync", port_str, "0", NULL);
-                MSG_DBG_F("execl error: %s", strerror(errno));
-
+                std::cerr << "[lurk-server] failed to exec lurk_server_dir_sync: " << strerror(errno) << std::endl;
             } else {
                 sleep(2);
                 port = htons(port);
@@ -129,6 +126,11 @@ int main(int argc, char * argv[])
             }
         }
     }
+} catch (std::runtime_error& e) {
+    std::cerr << "[lurk-server] failed in server control connection: " << e.what() << std::endl;
+} catch (std::exception& e) {
+    std::cerr << "[lurk-server] failed in server control connection: " << e.what() << std::endl;
+}
 
 }
 extern char ** environ;
@@ -145,26 +147,19 @@ static bool precreate_file_process()
 
 
         if (deliver_file_port == 0) {
-            MSG_DBG_F("deliver_file_port%d get failed", i);
-            return false;
+            throw std::runtime_error("deliver_file_port in config file is 0");
         }
         memset(deliver_file_port_str, 0, sizeof(deliver_file_port_str));
         snprintf(deliver_file_port_str, sizeof(deliver_file_port_str), "%hu", deliver_file_port);
 
         memset(verify_dir, 0, sizeof(verify_dir));
-        if ( get_config_verifypath_server(verify_dir) == false) {
-            MSG_DBG_F("get verify_path in config file failed");
-            return false;
-        }
+        get_config_verifypath(verify_dir, sizeof(verify_dir));
 
         // verify_dir[strlen(verify_dir)] = '/';
         // make_dir(verify_dir);
         // verify_dir[strlen(verify_dir)-1] = 0;
         memset(recv_dir, 0, sizeof(recv_dir));
-        if ( get_config_recv_path_server(recv_dir) == false) {
-            MSG_DBG_F("get recv_path in config file failed");
-            return false;
-        }
+        get_config_recv_path_server(recv_dir, sizeof(recv_dir));
 
         // Pe-created process to recv file
         char *  argv_str[6];
@@ -189,10 +184,8 @@ static bool precreate_file_process()
         posix_spawn_file_actions_adddup2(&process_action, STDOUT_FILENO, STDOUT_FILENO);
         posix_spawn_file_actions_adddup2(&process_action, STDERR_FILENO, STDERR_FILENO);
 
-        if ( posix_spawn(&pid_rtn, "./lurk_server_single_file_deliver", &process_action, &process_attr, argv_str, environ) != 0) {
-            MSG_DBG_F("create process errro : %s", strerror(errno));
-            return EXIT_FAILURE;
-        }
+        check_posix_thread_error(posix_spawn(&pid_rtn, "./lurk_server_single_file_deliver", &process_action, &process_attr, argv_str, environ), "posix_spawn");
+
         MSG_DBG_F("lurk_server_single_file_deliver pid = %d", pid_rtn);
         MSG_DBG_F("create process success, pid = %d", pid_rtn);
 

@@ -1,4 +1,4 @@
-#include "file_deliver.h"
+#include "file_deliver.hpp"
 #include "flags.h"
 #include "deliver.h"
 #include "utils/makedir.h"
@@ -120,13 +120,14 @@ send_single_file(int sockfd, sock_tag_t socktag, const char * filepath, int base
     int                 nready;
     // deliver_header_t    header;
     tsd_t *             tsd;
-
+    int                 send_flag;
+    int                 read_flag;
     enum PROCESS_INDICATOR    process_indicator = PROCESS_HANDLE_INFO;
 
 
     pthread_once(&tsd_once_key, tsd_once);
-    if ( (tsd = pthread_getspecific(tsd_key)) == NULL) {
-        tsd = calloc(1, sizeof(tsd_t));
+    if ( (tsd = (tsd_t *)pthread_getspecific(tsd_key)) == NULL) {
+        tsd = (tsd_t *)calloc(1, sizeof(tsd_t));
         pthread_setspecific(tsd_key, tsd);
     }
     tsd->sockfd = sockfd;
@@ -194,8 +195,8 @@ send_single_file(int sockfd, sock_tag_t socktag, const char * filepath, int base
     tsd->send_list.list_len = 0;
     tsd->send_list.max_list_len = 0;
 
-    int    send_flag = 1;
-    int    read_flag = 0;
+    send_flag = 1;
+    read_flag = 0;
     while (1) {
         FD_ZERO(&rset);
         FD_ZERO(&wset);
@@ -447,7 +448,7 @@ failed:
 static bool
 send_info()
 {
-    tsd_t *              tsd = pthread_getspecific(tsd_key);
+    tsd_t *              tsd = (tsd_t *)pthread_getspecific(tsd_key);
     file_info_t        filei;
 
     filei = (file_info_t){
@@ -479,7 +480,7 @@ static bool
 get_info_ack(file_info_ack_t * ack)
 {
     // file_info_ack_t     ack;
-    tsd_t *             tsd = pthread_getspecific(tsd_key);
+    tsd_t *             tsd = (tsd_t *)pthread_getspecific(tsd_key);
 
     // the ack only store a flag: DI_NEED_ALL, DI_NEED_COMPARE ...,
     // the type of flag is uint8_t
@@ -493,7 +494,7 @@ get_info_ack(file_info_ack_t * ack)
 static bool
 send_block(int block_no)
 {
-    tsd_t *                     tsd = pthread_getspecific(tsd_key);
+    tsd_t *                     tsd = (tsd_t *)pthread_getspecific(tsd_key);
     file_data_block_t           block;
 
     char *                      file_map_addr = NULL, * verify_map_addr = NULL;
@@ -509,13 +510,13 @@ send_block(int block_no)
     verify_map_len = tsd->verify_stat.st_size;
 
     // use mmap to deduce copy from kernel
-    if ( (file_map_addr = mmap(NULL, file_map_len, PROT_READ, MAP_SHARED, fileno(tsd->file_stream), block_no * tsd->block_len_set)) == MAP_FAILED) {
+    if ( (file_map_addr = (char *)mmap(NULL, file_map_len, PROT_READ, MAP_SHARED, fileno(tsd->file_stream), block_no * tsd->block_len_set)) == MAP_FAILED) {
         MSG_DBG_F("mmap failed: %s", strerror(errno));
         goto failed;
     }
 
 
-    if ( (verify_map_addr = mmap(NULL, verify_map_len, PROT_READ, MAP_SHARED, fileno(tsd->verify_stream), 0)) == MAP_FAILED) {
+    if ( (verify_map_addr = (char *)mmap(NULL, verify_map_len, PROT_READ, MAP_SHARED, fileno(tsd->verify_stream), 0)) == MAP_FAILED) {
         MSG_DBG_F("mmap failed: %s", strerror(errno));
         goto failed;
     }
@@ -557,7 +558,7 @@ failed:
 static bool
 send_verify()
 {
-    tsd_t *                     tsd = pthread_getspecific(tsd_key);
+    tsd_t *                     tsd = (tsd_t *)pthread_getspecific(tsd_key);
     file_data_block_t           block;
 
     void *                      verify_map_addr = NULL;
@@ -615,7 +616,7 @@ failed:
 static bool
 recv_block_need()
 {
-    tsd_t *             tsd = pthread_getspecific(tsd_key);
+    tsd_t *             tsd = (tsd_t *)pthread_getspecific(tsd_key);
     verify_block_ack_t  block_need;
 
 
@@ -626,7 +627,7 @@ recv_block_need()
         // pthread_mutex_lock(&tsd->send_list.mutex);
         block_no_node_t * node;
         for (int i = 0; i < block_need.vb_list_len; i++) {
-            node = malloc(sizeof(block_no_node_t));
+            node = (block_no_node_t *)malloc(sizeof(block_no_node_t));
             node->number = ntohl(block_need.vb_list[i]);
             node->next = tsd->send_list.head.next;
             tsd->send_list.head.next = node;
@@ -642,7 +643,7 @@ recv_block_need()
 static bool
 send_block_need()
 {
-    tsd_t *             tsd = pthread_getspecific(tsd_key);
+    tsd_t *             tsd = (tsd_t *)pthread_getspecific(tsd_key);
     block_no_node_t *   node;
     if ( tsd->send_list.head.next == NULL)
         return false;

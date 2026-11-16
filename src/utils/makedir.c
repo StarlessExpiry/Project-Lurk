@@ -42,7 +42,7 @@ bool make_dir(const char *path)
             // MSG_DBG_F("Create path %s", path_tmp);
             if (access(path_tmp, F_OK) == -1) {
                 if ( mkdir(path_tmp, 0755) == -1) {
-                    MSG_DBG_F("mkdir failed %s : %s", path_tmp, strerror(errno));
+                    // MSG_DBG_F("mkdir failed %s : %s", path_tmp, strerror(errno));
                     return false;
                 }
             }

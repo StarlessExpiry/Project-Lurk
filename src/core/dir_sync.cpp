@@ -1,39 +1,32 @@
 #include "dir_sync.hpp"
 #include "common/check_error.hpp"
 #include "common/msg_print.h"
-#include "utils/makedir.h"
-#include "deliver/deliver.h"
+#include "deliver.h"
 #include "table_control.hpp"
-#include "config/get_config.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
-#include <forward_list>
 #include <iostream>
 #include <memory>
-#include <stack>
 #include <stdexcept>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <sys/stat.h>
+#include <string.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <dirent.h>
+#include <sys/types.h>
+#include <fts.h>
+#include <spawn.h>
 
-
-extern "C" {
-    #include <sys/stat.h>
-    #include <sys/types.h>
-    #include <time.h>
-    #include <unistd.h>
-    #include <pthread.h>
-    #include <sys/stat.h>
-    #include <string.h>
-    #include <fcntl.h>
-    #include <stdio.h>
-    #include <stdlib.h>
-    #include <dirent.h>
-    #include <sys/types.h>
-    #include <fts.h>
-    #include <spawn.h>
-}
 
 // system environment, read only
 extern char ** environ;
@@ -56,13 +49,6 @@ typedef enum : uint8_t {
     RS_NEED_COMPARE    = 0x03,
     RS_NEED_ALL        = 0x04
 } reply_stat_t;
-
-// typedef struct {
-//     package_header_t    header;
-//     void *              data;
-//     uint32_t            data_len;
-// } package_t;
-
 
 typedef struct {
     package_header_t    header;
@@ -117,14 +103,13 @@ static uint32_t recv_package(int sockfd, package_header_t package_hdr_expect, vo
     } else {
         throw std::runtime_error("package's buff length is not enough, terminate sync process");
     }
-    
+
     // read again
     if (buff_len != 0)
         check_syscall_error(recv(sockfd, buff, buff_len, 0), "recv()");
     // if buff_len is 0, return normally
     return rtn_bytes;
 }
-
 
 class DirSendState {
 public:
@@ -142,7 +127,6 @@ public:
     virtual std::unique_ptr<DirSendState> handle(Sync_dir_sender& context);
 };
 
-
 class DirSendCompareState : public DirSendState {
 public:
     virtual std::unique_ptr<DirSendState> handle(Sync_dir_sender& context);
@@ -158,11 +142,71 @@ public:
     virtual std::unique_ptr<DirSendState> handle(Sync_dir_sender& context);
 };
 
+
+class DirRecvState {
+public:
+    virtual ~DirRecvState() = default;
+    virtual std::unique_ptr<DirRecvState> handle(Sync_dir_receiver& context) = 0;
+};
+
+class DirRecvInfoState : public DirRecvState {
+public:
+    virtual std::unique_ptr<DirRecvState> handle(Sync_dir_receiver& context);
+};
+
+
+class DirRecvFilesState : public DirRecvState {
+public:
+    virtual std::unique_ptr<DirRecvState> handle(Sync_dir_receiver& context);
+};
+
+
+class DirRecvCompareState : public DirRecvState {
+public:
+    virtual std::unique_ptr<DirRecvState> handle(Sync_dir_receiver& context);
+};
+
+class DirRecvFilesNeededState : public DirRecvState {
+public:
+    virtual std::unique_ptr<DirRecvState> handle(Sync_dir_receiver& context);
+};
+
+class DirRecvCloseState : public DirRecvState {
+public:
+    virtual std::unique_ptr<DirRecvState> handle(Sync_dir_receiver& context);
+};
+
+
+bool Sync_dir_sender::sync_start() {
+    std::unique_ptr<DirSendState> state(new DirSendInfoState());
+
+    while (state != nullptr && (dynamic_cast<DirSendCloseState*>(state.get()) == nullptr)) {
+        state = state->handle(*this);
+    }
+
+    if (state == nullptr)
+        return false;
+    else
+        return true;
+}
+
+bool Sync_dir_receiver::sync_start() {
+    std::unique_ptr<DirRecvState> state(new DirRecvInfoState());
+    while (state != nullptr && (dynamic_cast<DirRecvCloseState*>(state.get()) == nullptr)) {
+        state = state->handle(*this);
+    }
+
+    if (state == nullptr)
+        return false;
+    else
+        return true;
+}
+
 std::unique_ptr<DirSendState> DirSendInfoState::handle(Sync_dir_sender& context) {
     dir_tuple_t * dir_tuple = nullptr;
 try {
     if ( (dir_tuple = (dir_tuple_t *)context.dir_table_controller.get_single_tuple(context.dirpath_from_database)) != nullptr) {
-        printf("[dir sync] Synchronize a folder: '%s'\n", dir_tuple->dirpath);
+        printf("[dir-sync-sender] Synchronize a folder: '%s'\n", dir_tuple->dirpath);
         char table_name[100];
         memset(table_name, 0, sizeof(table_name));
         snprintf(table_name, sizeof(table_name)-1, "table_%s", dir_tuple->dirpath_hash);
@@ -179,7 +223,7 @@ try {
         //     goto failed;
         // }
         // check_syscall_error(send(context.sockfd, dir_tuple, sizeof(dir_tuple_t), 0), "send");
-        send_package(*context.sockfdp.get(), INFO, dir_tuple, sizeof(dir_tuple_t));
+        send_package(context.sockfd, INFO, dir_tuple, sizeof(dir_tuple_t));
 
         context.basepath_len = strlen(dir_tuple->dirpath);
         memset(context.basepath_hash, 0, sizeof(context.basepath_hash));
@@ -191,7 +235,7 @@ try {
     Dir_table_controller::free_tuples(dir_tuple);
 
     reply_stat_t info_reply;
-    recv_package(*context.sockfdp.get(), INFO, &info_reply, sizeof(info_reply));
+    recv_package(context.sockfd, INFO, &info_reply, sizeof(info_reply));
     if (info_reply == RS_NO_NEED_DELIVER) {
         return std::unique_ptr<DirSendCloseState>();
     }
@@ -204,9 +248,9 @@ try {
         // return nullptr;
 
 }catch (std::runtime_error& e) {
-    std::cerr << "[lurk client] dir send failed in DirSendInfoState: " << e.what() << std::endl;
+    std::cerr << "[dir-sync-sender] failed in DirSendInfoState: " << e.what() << std::endl;
 }catch (std::exception& e) {
-    std::cerr << "[lurk client] dir send failed in DirSendInfoState: " << e.what() << std::endl;
+    std::cerr << "[dir-sync-sender] failed in DirSendInfoState: " << e.what() << std::endl;
 }
     if (dir_tuple != nullptr) {
         Dir_table_controller::free_tuples(dir_tuple);
@@ -235,7 +279,7 @@ try{
             file_tuples->tuples[0].update_flag = htons(file_tuples->tuples[0].update_flag);
             file_tuples->tuples[0].deleted_flag = htons(file_tuples->tuples[0].deleted_flag);
             file_tuples->tuples[0].file_size = htonll(file_tuples->tuples[0].file_size);
-            send_package(*context.sockfdp.get(), FILES_BEGIN, nullptr, 0);
+            send_package(context.sockfd, FILES_BEGIN, nullptr, 0);
 
             // uint8_t process_exit_code = 0x00;
 
@@ -308,7 +352,7 @@ try{
             }
 
 
-            send_package(*context.sockfdp.get(), FILES_SUCCESS, nullptr, 0);
+            send_package(context.sockfd, FILES_SUCCESS, nullptr, 0);
 
             // if ( deliver(sockfd, socktag, DHT_DIR_FINISH_SENDING, &process_exit_code, sizeof(process_exit_code)) == false) {
             //     File_table_controller::free_tuples(file_tuples);
@@ -336,12 +380,12 @@ try{
     // if ( deliver(sockfd, socktag, DHT_DIR_SEND_END, NULL, 0) == false)
     //     return false;
     // return true;
-    send_package(*context.sockfdp.get(), FILES_END, nullptr, 0);
+    send_package(context.sockfd, FILES_END, nullptr, 0);
     return std::unique_ptr<DirSendCloseState>();
 }catch (std::runtime_error& e) {
-    std::cerr << "[lurk client] dir send failed in DirSendFilesState: " << e.what() << std::endl;
+    std::cerr << "[dir-sync-sender] dir send failed in DirSendFilesState: " << e.what() << std::endl;
 }catch (std::exception& e) {
-    std::cerr << "[lurk client] dir send failed in DirSendFilesState: " << e.what() << std::endl;
+    std::cerr << "[dir-sync-sender] dir send failed in DirSendFilesState: " << e.what() << std::endl;
 }
     if (file_tuples != nullptr) {
         File_table_controller::free_tuples(file_tuples);
@@ -370,7 +414,7 @@ try {
             memcpy(&file_tuples_to_send->tuples[i], &file_tuples->tuples[i], sizeof(file_tuple_t));
         }
         // int data_len = sizeof(file_tuples_t)+ file_tuples->size*sizeof(file_tuple_t);
-        send_package(*context.sockfdp.get(), TUPLES, file_tuples_to_send, sizeof(file_tuples_t)+10*sizeof(file_tuple_t));
+        send_package(context.sockfd, TUPLES, file_tuples_to_send, sizeof(file_tuples_t)+10*sizeof(file_tuple_t));
         offset += file_tuples->size;
         // file_tuples_to_free.push(file_tuples);
         File_table_controller::free_tuples(file_tuples);
@@ -385,12 +429,12 @@ try {
     //     return false;
 
 
-    send_package(*context.sockfdp.get(), TUPLES, nullptr, 0);
+    send_package(context.sockfd, TUPLES, nullptr, 0);
     return std::unique_ptr<DirSendFilesNeededState>();
 }catch (std::runtime_error& e) {
-    std::cerr << "[dir send] failed in DirSendCompareState: " << e.what() << std::endl;
+    std::cerr << "[dir-sync-sender] failed in DirSendCompareState: " << e.what() << std::endl;
 }catch (std::exception& e) {
-    std::cerr << "[dir send] failed in DirSendCompareState: " << e.what() << std::endl;
+    std::cerr << "[dir-sync-sender] failed in DirSendCompareState: " << e.what() << std::endl;
 }
     if (file_tuples != nullptr) {
         File_table_controller::free_tuples(file_tuples);
@@ -402,10 +446,9 @@ try {
 }
 
 std::unique_ptr<DirSendState> DirSendFilesNeededState::handle(Sync_dir_sender& context) {
-
     char                    filepath[4096];
 
-    int                     maxfd = *context.sockfdp.get();
+    int                     maxfd = context.sockfd;
     fd_set                  rset, wset;
     int                     nready;
     int                     send_flag, read_flag;
@@ -420,11 +463,12 @@ try {
         FD_ZERO(&wset);
 
         if (send_flag == 1)
-            FD_SET(*context.sockfdp.get(), &wset);
+            FD_SET(context.sockfd, &wset);
         if (read_flag == 1)
-            FD_SET(*context.sockfdp.get(), &rset);
+            FD_SET(context.sockfd, &rset);
 
         if (read_flag == 0 && send_flag == 0) {
+            send_package(context.sockfd, FILES_SUCCESS, nullptr, 0);
             return std::unique_ptr<DirSendCloseState>();
         }
 
@@ -436,9 +480,9 @@ try {
             }
         }
 
-        if (FD_ISSET(*context.sockfdp.get(), &rset)) {
+        if (FD_ISSET(context.sockfd, &rset)) {
             memset(filepath, 0, sizeof(filepath));
-            int recv_bytes = recv_package(*context.sockfdp.get(), FILES_NEED, filepath, sizeof(filepath));
+            int recv_bytes = recv_package(context.sockfd, FILES_NEED, filepath, sizeof(filepath));
 
             if (recv_bytes != 0) {
                 file_send_queue.push(filepath);
@@ -450,9 +494,7 @@ try {
             }
         }
 
-        if (FD_ISSET(*context.sockfdp.get(), &wset)) {
-            // send_package(*context.sockfdp.get(), FILES_BEGIN, nullptr, 0);
-
+        if (FD_ISSET(context.sockfd, &wset)) {
             posix_spawn_file_actions_t      process_action; // Redirect the send_single_file process's stdout to the current process's stdout/stderror
             posix_spawnattr_t               process_attr; // enable the process join a same process group, it is convenient to kill all of them
             posix_spawn_file_actions_init(&process_action);
@@ -524,18 +566,18 @@ try {
             file_tuple->is_file_or_dir = ntohs(file_tuple->is_file_or_dir);
             file_tuple->deleted_flag = ntohs(file_tuple->deleted_flag);
 
-            // if a package is send success, send FILES_SUCCESS
-            send_package(*context.sockfdp.get(), FILES_SUCCESS, file_tuple, sizeof(file_tuple_t));
+            // if a package is send success, send FILES_SUCCESS with file_tuple
+            send_package(context.sockfd, FILES_SUCCESS, file_tuple, sizeof(file_tuple_t));
 
             if (file_send_queue.empty()) {
-                send_flag = 1;
+                send_flag = 0;
             }
         }
     }
 }catch (std::runtime_error& e) {
-    std::cerr << "[dir sync] failed in DirSendFilesNeededState: " << e.what() << std::endl;
+    std::cerr << "[dir-sync-sender] failed in DirSendFilesNeededState: " << e.what() << std::endl;
 }catch (std::exception& e) {
-    std::cerr << "[dir sync] failed in DirSendFilesNeededState: " << e.what() << std::endl;
+    std::cerr << "[dir-sync-sender] failed in DirSendFilesNeededState: " << e.what() << std::endl;
 }
     return nullptr;
 }
@@ -543,72 +585,30 @@ try {
 
 
 std::unique_ptr<DirSendState> DirSendCloseState::handle(Sync_dir_sender& context) {
-    shutdown(*context.sockfdp.get(), SHUT_RDWR);
-    return nullptr;
+    // shutdown(context.sockfd, SHUT_RDWR);
+    // close(context.sockfd);
+    // return nullptr;
+    return std::unique_ptr<DirSendCloseState>();
 }
 
 
-class DirRecvState {
-public:
-    virtual ~DirRecvState() = default;
-    virtual std::unique_ptr<DirRecvState> handle(Sync_dir_receiver& context) = 0;
-};
-
-class DirRecvInfoState : public DirRecvState {
-public:
-    virtual std::unique_ptr<DirRecvState> handle(Sync_dir_receiver& context);
-};
-
-
-class DirRecvFilesState : public DirRecvState {
-public:
-    virtual std::unique_ptr<DirRecvState> handle(Sync_dir_receiver& context);
-};
-
-
-class DirRecvCompareState : public DirRecvState {
-public:
-    virtual std::unique_ptr<DirRecvState> handle(Sync_dir_receiver& context);
-};
-
-class DirRecvFilesNeededState : public DirRecvState {
-public:
-    virtual std::unique_ptr<DirRecvState> handle(Sync_dir_receiver& context);
-};
-
-class DirRecvCloseState : public DirRecvState {
-public:
-    virtual std::unique_ptr<DirRecvState> handle(Sync_dir_receiver& context);
-};
-
-
+// ********************** receiver ********************
 
 
 std::unique_ptr<DirRecvState> DirRecvInfoState::handle(Sync_dir_receiver& context) {
     dir_tuple_t *    dir_local_tuple = nullptr;
+    dir_tuple_t     dir_recv_tuple;
 try {
-    dir_tuple_t   dir_recv_tuple;
 
-    recv_package(*context.sockfdp.get(), INFO, &dir_recv_tuple, sizeof(dir_tuple_t));
+    recv_package(context.sockfd, INFO, &dir_recv_tuple, sizeof(dir_tuple_t));
 
     char table_name[100];
     memset(table_name, 0, sizeof(table_name));
     snprintf(table_name, sizeof(table_name)-1, "table_%s", dir_recv_tuple.dirpath_hash);
 
-//     // /path/to/your/recv/xxxxx(sha256)
-//     memset(cur_recv_dirpath, 0, sizeof(cur_recv_dirpath));
-//     snprintf(cur_recv_dirpath, sizeof(cur_recv_dirpath)-1, "%s/%s", recv_rootpath, dir_recv_tuples->tuples[0].dirpath_hash);
-//
-//     // /path/to/your/verify/xxxxxx(sha256)
-//     memset(cur_verify_dirpath, 0, sizeof(cur_verify_dirpath));
-//     snprintf(cur_verify_dirpath, sizeof(cur_verify_dirpath)-1, "%s/%s", verify_rootpath, dir_recv_tuples->tuples[0].dirpath_hash);
-
     if ( context.file_table_controller.bind(nullptr, table_name) == false) {
         throw std::runtime_error("bind file_table_controller failed");
     }
-
-    // dir_recv_tuple->size = ntohl(dir_recv_tuple->size);
-    // MSG_DBG_F("size = %d, filepath = %s", dir_recv_tuple->size, dir_recv_tuple->dirpath);
 
     dir_recv_tuple.modify_time = ntohll(dir_recv_tuple.modify_time);
     dir_recv_tuple.update_flag = ntohs(dir_recv_tuple.update_flag);
@@ -618,29 +618,29 @@ try {
     reply_stat_t info_reply;
     if ( (dir_local_tuple = (dir_tuple_t *)context.dir_table_controller.get_single_tuple(dir_recv_tuple.dirpath)) != nullptr) {
         if (dir_local_tuple->modify_time == dir_recv_tuple.modify_time) {
-            printf("[sync dir] recv info of dir: '%s', server has the lastest, don't need to send\n", dir_recv_tuple.dirpath);
+            printf("[dir-sync-receiver] recv info of dir: '%s', server has the lastest, don't need to send\n", dir_recv_tuple.dirpath);
             info_reply = RS_NO_NEED_DELIVER;
-            send_package(*context.sockfdp.get(), INFO, &info_reply, sizeof(info_reply));
+            send_package(context.sockfd, INFO, &info_reply, sizeof(info_reply));
             Dir_table_controller::free_tuples(dir_local_tuple);
             return std::unique_ptr<DirRecvCloseState>();
         } else {
-            printf("[sync dir] Deal dir: '%s', server need to compare it with client\n", dir_recv_tuple.dirpath);
+            printf("[dir-sync-receiver] Deal dir: '%s', server need to compare it with client\n", dir_recv_tuple.dirpath);
             info_reply = RS_NEED_COMPARE;
-            send_package(*context.sockfdp.get(), INFO, &info_reply, sizeof(info_reply));
+            send_package(context.sockfd, INFO, &info_reply, sizeof(info_reply));
             Dir_table_controller::free_tuples(dir_local_tuple);
             return std::unique_ptr<DirRecvCompareState>();
         }
     } else {
-        printf("[sync dir] recv info of dir: '%s', server dose not have it, read all files of it\n", dir_recv_tuple.dirpath);
+        printf("[dir-sync-receiver] recv info of dir: '%s', server dose not have it, read all files of it\n", dir_recv_tuple.dirpath);
         info_reply = RS_NEED_ALL;
-        send_package(*context.sockfdp.get(), INFO, &info_reply, sizeof(info_reply));
+        send_package(context.sockfd, INFO, &info_reply, sizeof(info_reply));
         return std::unique_ptr<DirRecvFilesState>();
     }
 
 } catch (std::runtime_error& e) {
-    std::cerr << "[dir recv] failed in DirRecvInfoState: " << e.what() << std::endl;
+    std::cerr << "[dir-sync-receiver] failed in DirRecvInfoState: " << e.what() << std::endl;
 } catch (std::exception& e) {
-    std::cerr << "[dir recv] failed in DirRecvInfoState: " << e.what() << std::endl;
+    std::cerr << "[dir-sync-receiver] failed in DirRecvInfoState: " << e.what() << std::endl;
 }
     if (dir_local_tuple != nullptr) {
         Dir_table_controller::free_tuples(dir_local_tuple);
@@ -655,13 +655,13 @@ try {
     while (1) {
         package_header_t header;
         // file_tuple_t file_tuple;
-        check_syscall_error(recv(*context.sockfdp.get(), &header, sizeof(header), 0), "recv()");
+        check_syscall_error(recv(context.sockfd, &header, sizeof(header), 0), "recv()");
         // recv_package(*context.sockfdp.get(), FILES_BEGIN, &header, sizeof(header));
         if (header == FILES_END) {
             return std::unique_ptr<DirRecvCloseState>();
         } else if (header == FILES_BEGIN) {
             memset(&file_tuple, 0, sizeof(file_tuple));
-            check_syscall_error(recv(*context.sockfdp.get(), &file_tuple, sizeof(file_tuple), 0), "recv()");
+            check_syscall_error(recv(context.sockfd, &file_tuple, sizeof(file_tuple), 0), "recv()");
             file_tuple.modify_time = ntohll(file_tuple.modify_time);
             file_tuple.file_size = ntohll(file_tuple.file_size);
             file_tuple.update_flag = ntohs(file_tuple.update_flag);
@@ -677,9 +677,9 @@ try {
         }
     }
 } catch (std::runtime_error& e) {
-    std::cerr << "[dir recv] failed in DirRecvFilesState: " << e.what() << std::endl;
+    std::cerr << "[dir-sync-receiver] failed in DirRecvFilesState: " << e.what() << std::endl;
 } catch (std::exception& e) {
-    std::cerr << "[dir recv] failed in DirRecvFilesState: " << e.what() << std::endl;
+    std::cerr << "[dir-sync-receiver] failed in DirRecvFilesState: " << e.what() << std::endl;
 }
     return nullptr;
 }
@@ -688,18 +688,19 @@ std::unique_ptr<DirRecvState> DirRecvCompareState::handle(Sync_dir_receiver& con
     file_tuples_t *      file_recv_tuples = nullptr;
     file_tuple_t *       file_local_tuple = nullptr;
 try {
-    file_recv_tuples = (file_tuples_t *)calloc(1, sizeof(file_tuples_t)+100);
+    file_recv_tuples = (file_tuples_t *)calloc(1, sizeof(file_tuples_t)+10*sizeof(file_tuple_t));
     // if ( deliver_get_data(sockfd, socktag, file_recv_tuples, message_len, &message_empty_flag) == false) {
     //     MSG_DBG("Recv data failed");
     //     goto failed;
     // }
-    recv_package(*context.sockfdp.get(), TUPLES, file_recv_tuples, sizeof(file_tuples_t)+10*sizeof(file_tuple_t));
-    MSG_DBG_F("file_recv_tuples->size = %d", file_recv_tuples->size);
-    printf("Need to compare %d files\n", file_recv_tuples->size);
-
+    recv_package(context.sockfd, TUPLES, file_recv_tuples, sizeof(file_tuples_t)+10*sizeof(file_tuple_t));
     file_recv_tuples->size = ntohll(file_recv_tuples->size);
+
+    // MSG_DBG_F("file_recv_tuples->size = %d", file_recv_tuples->size);
+    printf("[dir-sync-receiver] Need to compare %d files\n", file_recv_tuples->size);
+
     for (int i = 0; i < file_recv_tuples->size; i++) {
-        MSG_DBG_F("i = %d", i);
+        // MSG_DBG_F("i = %d", i);
         file_recv_tuples->tuples[i].modify_time = ntohll(file_recv_tuples->tuples[i].modify_time);
         file_recv_tuples->tuples[i].file_size = ntohll(file_recv_tuples->tuples[i].file_size);
         file_recv_tuples->tuples[i].update_flag = ntohs(file_recv_tuples->tuples[i].update_flag);
@@ -708,13 +709,13 @@ try {
 
         if ( (file_local_tuple = (file_tuple_t*)context.file_table_controller.get_single_tuple(file_recv_tuples->tuples[i].filepath)) == nullptr) {
             context.file_need_list.push_back(file_recv_tuples->tuples[i].filepath);
-            printf("Local database doesn't have file '%s', need to recv it\n", file_recv_tuples->tuples[i].filepath);
+            printf("[dir-sync-receiver] Local database doesn't have file '%s', need to recv it\n", file_recv_tuples->tuples[i].filepath);
         } else {
             if ( file_recv_tuples->tuples[i].modify_time == file_local_tuple->modify_time &&
                 file_recv_tuples->tuples[i].file_size == file_local_tuple->file_size) {
                 // do nothing
                 // MSG_DBG_F("Local database has file '%s', modify_time and file_size of it is match, donot need to recv it", file_local_tuple->filepath);
-                printf("Local database has file '%s', modify_time and file_size of it is match, donot need to recv it\n", file_local_tuple->filepath);
+                printf("[dir-sync-receiver] Local database has file '%s', modify_time and file_size of it is match, donot need to recv it\n", file_local_tuple->filepath);
             } else {
                 // file_tuple_t tuple_node;
                 // memcpy(&tuple_node, &(file_recv_tuples->tuples[i]), sizeof(tuple_node));
@@ -722,7 +723,7 @@ try {
                 // dir_table_controller.update_table(&(file_recv_tuples->tuples[i]));
 
                 // MSG_DBG_F("Local database has file '%s', but need to compare it", file_local_tuple->filepath);
-                printf("Local database has file '%s', but need to compare it", file_local_tuple->filepath);
+                printf("[dir-sync-receiver] Local database has file '%s', but need to compare it", file_local_tuple->filepath);
             }
             File_table_controller::free_tuples(file_local_tuple);
         }
@@ -732,9 +733,9 @@ try {
         free(file_recv_tuples);
 
 } catch (std::runtime_error& e) {
-    std::cerr << "[dir recv] failed in DirRecvFilesState: " << e.what() << std::endl;
+    std::cerr << "[dir-sync-receiver] failed in DirRecvCompareState: " << e.what() << std::endl;
 } catch (std::exception& e) {
-    std::cerr << "[dir recv] failed in DirRecvFilesState: " << e.what() << std::endl;
+    std::cerr << "[dir-sync-receiver] failed in DirRecvCompareState: " << e.what() << std::endl;
 }
     if ( file_recv_tuples != nullptr)
         free(file_recv_tuples);
@@ -745,16 +746,28 @@ try {
 }
 
 
-
 std::unique_ptr<DirRecvState> DirRecvFilesNeededState::handle(Sync_dir_receiver& context) {
-    int                     maxfd = *context.sockfdp.get();
+    int                     maxfd = context.sockfd;
     fd_set                  rset, wset;
     int                     nready;
-    int                     send_flag, read_flag;
+    int                     send_flag, recv_flag;
+try {
 
+    send_flag = 1;
+    recv_flag = 1;
     while (1) {
         FD_ZERO(&rset);
         FD_ZERO(&wset);
+
+        if (send_flag == 1)
+            FD_SET(context.sockfd, &wset);
+        if (recv_flag == 1)
+            FD_SET(context.sockfd, &rset);
+
+        if (send_flag == 0 && recv_flag == 0) {
+            return std::unique_ptr<DirRecvCloseState>();
+        }
+
 
         if ( (nready = select(maxfd+1, &rset, &wset, NULL, NULL)) == -1) {
             if (errno == EINTR) {
@@ -766,35 +779,54 @@ std::unique_ptr<DirRecvState> DirRecvFilesNeededState::handle(Sync_dir_receiver&
 
         // if recv a message with FILES_SUCCESS，update table
         // if client send file failed, server could not know;
-        if (FD_ISSET(*context.sockfdp.get(), &rset)) {
+        if (FD_ISSET(context.sockfd, &rset)) {
             file_tuple_t file_tuple;
             memset(&file_tuple, 0, sizeof(file_tuple));
-            recv_package(*context.sockfdp.get(), FILES_SUCCESS, &file_tuple, sizeof(file_tuple));
+            int data_len = recv_package(context.sockfd, FILES_SUCCESS, &file_tuple, sizeof(file_tuple));
+            if (data_len == 0) {
+                recv_flag = 0;
+            }
             context.file_table_controller.update_table(&file_tuple);
         }
 
         // send a filepath to client, client needs to send back a file
-        if (FD_ISSET(*context.sockfdp.get(), &wset)) {
-            // fixed bytes
-            char filepath[4096];
-            strncpy(filepath, context.file_need_list.front().c_str(), sizeof(filepath));
-            send_package(*context.sockfdp.get(), FILES_NEED, filepath, 4096);
-            context.file_need_list.pop_front();
+        if (FD_ISSET(context.sockfd, &wset)) {
+            if (!context.file_need_list.empty()) {
+                // fixed bytes
+                char filepath[4096];
+                strncpy(filepath, context.file_need_list.front().c_str(), sizeof(filepath));
+                send_package(context.sockfd, FILES_NEED, filepath, 4096);
+                context.file_need_list.pop_front();
+            } else {
+                send_flag = 0;
+            }
         }
-
-        if (FD_ISSET(*context))
-        
-
-
-
-
-
-
-
-
     }
-
+} catch (std::runtime_error& e) {
+    std::cerr << "[dir-sync-receiver] failed in DirRecvFilesNeededState: " << e.what() << std::endl;
+} catch (std::exception& e) {
+    std::cerr << "[dir-sync-receiver] failed in DirRecvFilesNeededState: " << e.what() << std::endl;
 }
+    return nullptr;
+}
+
+
+std::unique_ptr<DirRecvState> DirRecvCloseState::handle(Sync_dir_receiver& context) {
+// try{
+//     char buff[100];
+//     while ( check_syscall_error(recv(context.sockfd, buff, sizeof(buff), 0), "recv()") > 0) {
+//         // do nothing
+//     }
+//     // get FIN, recv() return 0
+//     close(context.sockfd);
+// } catch (std::runtime_error& e) {
+//     std::cerr << "[dir-sync-receiver] failed in DirRecvCloseState: " << e.what() << std::endl;
+// } catch (std::exception& e) {
+//     std::cerr << "[dir-sync-receiver] failed in DirRecvCloseState: " << e.what() << std::endl;
+// }
+    return std::unique_ptr<DirRecvCloseState>();
+}
+
 
 
 
@@ -945,28 +977,28 @@ std::unique_ptr<DirRecvState> DirRecvFilesNeededState::handle(Sync_dir_receiver&
 //                     read_flag = 1, send_flag = 0;
 //                     break;
 //                 }
-                case PROCESS_DELIVER_FILE_NEED: {
-                    MSG_DBG_F("DIR: Turn into PROCESS_HANDLE_FILE_NEED (SEND)");
-                    if (!file_send_list.empty()) {
-                        if ( send_unit_need() == false) {
-                            MSG_DBG_F("send_unit_need() failed");
-                            printf("send file failed\n");
-                            goto failed;
-                        }
-                        file_send_list.pop_front();
-                    }
-                    if (file_send_list.empty() && read_flag == 0) {
-                        send_flag = 0;
-                        if ( deliver(sockfd, socktag, DHT_DIR_SEND_END, nullptr, 0) == false) {
-                            MSG_DBG_F("deliver failed");
-                            goto failed;
-                        }
-                        MSG_DBG_F("SEND ALL SUCCESS, quit");
-                        goto success;
-                    }
-                    break;
-
-                }
+//                 case PROCESS_DELIVER_FILE_NEED: {
+//                     MSG_DBG_F("DIR: Turn into PROCESS_HANDLE_FILE_NEED (SEND)");
+//                     if (!file_send_list.empty()) {
+//                         if ( send_unit_need() == false) {
+//                             MSG_DBG_F("send_unit_need() failed");
+//                             printf("send file failed\n");
+//                             goto failed;
+//                         }
+//                         file_send_list.pop_front();
+//                     }
+//                     if (file_send_list.empty() && read_flag == 0) {
+//                         send_flag = 0;
+//                         if ( deliver(sockfd, socktag, DHT_DIR_SEND_END, nullptr, 0) == false) {
+//                             MSG_DBG_F("deliver failed");
+//                             goto failed;
+//                         }
+//                         MSG_DBG_F("SEND ALL SUCCESS, quit");
+//                         goto success;
+//                     }
+//                     break;
+//
+//                 }
 //                 default: {
 //                     MSG_DBG("unknown stat, quit");
 //                     goto failed;
@@ -1186,23 +1218,23 @@ std::unique_ptr<DirRecvState> DirRecvFilesNeededState::handle(Sync_dir_receiver&
                 //     }
                 //     break;
                 // }
-                case PROCESS_DELIVER_FILE_NEED: {
-                    MSG_DBG("DIR: Turn into PROCESS_DELIVER_FILE_NEED (READ)");
-                    file_tuple_t file_tuple;
-                    if ( header.dh_tag == DHT_DIR_SEND_FILE) {
-                        memset(&file_tuple, 0, sizeof(file_tuple));
-                        if ( deliver_get_data(sockfd, socktag, &file_tuple, sizeof(file_tuple), &message_empty_flag) == false) {
-                            MSG_DBG("deliver get data failed");
-                            goto failed;
-                        }
-                        MSG_DBG_F("Receive a file's send request, the file is %s", file_tuple.filepath);
-
-                        if ( recv_unit_need() == false) {
-                            MSG_DBG_F("recv_unit_need of file '%s' failed, donot update table", file_tuple.filepath);
-                            // dir_table_update_flag = false;
-                            // goto failed;
-                            // nothing, continue the other files send request
-                        }
+//                 case PROCESS_DELIVER_FILE_NEED: {
+//                     MSG_DBG("DIR: Turn into PROCESS_DELIVER_FILE_NEED (READ)");
+//                     file_tuple_t file_tuple;
+//                     if ( header.dh_tag == DHT_DIR_SEND_FILE) {
+//                         memset(&file_tuple, 0, sizeof(file_tuple));
+//                         if ( deliver_get_data(sockfd, socktag, &file_tuple, sizeof(file_tuple), &message_empty_flag) == false) {
+//                             MSG_DBG("deliver get data failed");
+//                             goto failed;
+//                         }
+//                         MSG_DBG_F("Receive a file's send request, the file is %s", file_tuple.filepath);
+//
+//                         if ( recv_unit_need() == false) {
+//                             MSG_DBG_F("recv_unit_need of file '%s' failed, donot update table", file_tuple.filepath);
+//                             // dir_table_update_flag = false;
+//                             // goto failed;
+//                             // nothing, continue the other files send request
+//                         }
                         // } else {
                         //     if ( file_table_controller.update_table(&file_tuple) == false) {
                         //         MSG_DBG_F("Update table failed of file '%s'", file_tuple.filepath);
@@ -1211,25 +1243,25 @@ std::unique_ptr<DirRecvState> DirRecvFilesNeededState::handle(Sync_dir_receiver&
                         //     }
                         // }
 
-                    } else if (header.dh_tag == DHT_DIR_FINISH_SENDING) {
-                        uint8_t sender_exit_code;
-                        if ( deliver_get_data(sockfd, socktag, &sender_exit_code, sizeof(sender_exit_code), &message_empty_flag) == false) {
-                            MSG_DBG("deliver get data failed");
-                            goto failed;
-                        }
-                        if (sender_exit_code == 0x00) {
-                            file_table_controller.update_table(&file_tuple);
-                        } else {
-                            dir_table_update_flag = false;
-                            printf("Sender send file failed, do not update file table\n");
-                        }
-                    } else if ( header.dh_tag == DHT_DIR_SEND_END) {
-                        goto success;
-                    }
-                    break;
-                }
-
-            }
+//                     } else if (header.dh_tag == DHT_DIR_FINISH_SENDING) {
+//                         uint8_t sender_exit_code;
+//                         if ( deliver_get_data(sockfd, socktag, &sender_exit_code, sizeof(sender_exit_code), &message_empty_flag) == false) {
+//                             MSG_DBG("deliver get data failed");
+//                             goto failed;
+//                         }
+//                         if (sender_exit_code == 0x00) {
+//                             file_table_controller.update_table(&file_tuple);
+//                         } else {
+//                             dir_table_update_flag = false;
+//                             printf("Sender send file failed, do not update file table\n");
+//                         }
+//                     } else if ( header.dh_tag == DHT_DIR_SEND_END) {
+//                         goto success;
+//                     }
+//                     break;
+//                 }
+//
+//             }
 
         // }
 //         if (FD_ISSET(sockfd, &wset)) {
@@ -1258,23 +1290,23 @@ std::unique_ptr<DirRecvState> DirRecvFilesNeededState::handle(Sync_dir_receiver&
 //                     }
 //                     break;
 //                 }
-                case PROCESS_DELIVER_FILE_NEED: {
-                    MSG_DBG("DIR: Turn into PROCESS_DELIVER_FILE_NEED (SEND)");
-                    if ( !file_need_list.empty()) {
-                        MSG_DBG_F("Send file need: %s", file_need_list.front().c_str());
-                        send_unit_need();
-                        file_need_list.pop_front();
-                        read_flag = 1;
-                    } else {
-                        MSG_DBG_F("Send all files need");
-                        send_flag = 0, read_flag = 1;
-                        if ( deliver(sockfd, socktag, DHT_DIR_FILE_NEED, nullptr, 0) == false) {
-                            MSG_DBG("deliver failed");
-                            goto failed;
-                        }
-                    }
-                    break;
-                }
+                // case PROCESS_DELIVER_FILE_NEED: {
+                //     MSG_DBG("DIR: Turn into PROCESS_DELIVER_FILE_NEED (SEND)");
+                //     if ( !file_need_list.empty()) {
+                //         MSG_DBG_F("Send file need: %s", file_need_list.front().c_str());
+                //         send_unit_need();
+                //         file_need_list.pop_front();
+                //         read_flag = 1;
+                //     } else {
+                //         MSG_DBG_F("Send all files need");
+                //         send_flag = 0, read_flag = 1;
+                //         if ( deliver(sockfd, socktag, DHT_DIR_FILE_NEED, nullptr, 0) == false) {
+                //             MSG_DBG("deliver failed");
+                //             goto failed;
+                //         }
+                //     }
+                //     break;
+                // }
 //                 default: {
 //                     MSG_DBG("unknown stat, quit");
 //                     goto failed;

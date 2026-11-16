@@ -1,6 +1,6 @@
 #include "core/dir_sync.hpp"
 #include "core/table_control.hpp"
-#include "deliver/deliver.h"
+#include "core/deliver.h"
 #include "common/check_error.hpp"
 #include "common/msg_print.h"
 #include "config/get_config.hpp"
@@ -176,7 +176,17 @@ thread_make(int no)
 void *
 dir_sync_thread(void * arg)
 {
-    dir_thread_arg_t *  dir_thread_arg = (dir_thread_arg_t *)arg;
+    dir_thread_arg_t *                  dir_thread_arg = (dir_thread_arg_t *)arg;
+    Sync_dir_sender *                   sender = nullptr;
+
+    int                                 sockfd;
+    int                                 sync_dir_sockfd;
+    char                                server_ip_str[NI_MAXHOST];
+    uint16_t                            server_port;
+    struct sockaddr_in                  servaddr, new_servaddr;
+    // big endian while get it
+    uint16_t                            deliver_port;
+    char                                verify_path[4096];
 try {
     while (1) {
         pthread_mutex_lock(&ds_list.dirpath_list_mutex);
@@ -212,97 +222,83 @@ try {
         int status;
         waitpid(pid_rtn, &status, 0);
         if (WIFEXITED(status)) {
-            MSG_DBG_F("Process exit with stat: %d", WEXITSTATUS(status));
+            MSG_DBG_F("[lurk-client] Process exit with stat: %d", WEXITSTATUS(status));
             int exit_code = WEXITSTATUS(status);
             if (exit_code == EXIT_SUCCESS) {
-                MSG_DBG_F("Process return EXIT_SUCCESS");
+                MSG_DBG_F("[lurk-client] Process return EXIT_SUCCESS");
             } else {
-                MSG_DBG_F("Process return EXIT_FAILURE");
+                MSG_DBG_F("[lurk-client] Process return EXIT_FAILURE");
                 continue;
             }
         } else if (WIFSIGNALED(status)) {
-            MSG_DBG_F("Process is killed : %d", WTERMSIG(status));
+            MSG_DBG_F("[lurk-client] Process is killed : %d", WTERMSIG(status));
             continue;
         }
 
-
-
-        std::unique_ptr<int, fd_deleter>    sockfdp(new int(0), fd_deleter());
-        std::shared_ptr<int>                sync_dir_socketp(new int(0), fd_deleter());
-        // int                                 sync_dir_socket;
-        char                                server_ip_str[NI_MAXHOST];
-        uint16_t                            server_port;
-        struct sockaddr_in                  servaddr;
-        // read it as big endian
-        uint16_t                deliver_port;
-        char                    verify_path[4096];
-        
         // now return immediately
-        check_syscall_error((*sockfdp.get() = socket(AF_INET, SOCK_STREAM, 0)), "socket");
+        check_syscall_error((sockfd = socket(AF_INET, SOCK_STREAM, 0)), "socket");
 
         memset(server_ip_str, 0, sizeof(server_ip_str));
         get_config_server_ip(server_ip_str, sizeof(server_ip_str));
-
         server_port = get_config_server_port();
-
         servaddr.sin_family = AF_INET;
         servaddr.sin_port = htons(server_port);
 
         check_syscall_error(inet_pton(AF_INET, server_ip_str, &servaddr.sin_addr), "inet_pton");
-        check_syscall_error(connect(*sockfdp.get(), (struct sockaddr *)&servaddr, sizeof(servaddr)), "first connect");
-
+        check_syscall_error(connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)), "first connect");
         // for future use
         uint8_t     message = 0x01;
-        check_syscall_error(send(*sockfdp.get(), &message, sizeof(message), 0), "send");
-        check_syscall_error(recv(*sockfdp.get(), &deliver_port, sizeof(deliver_port), 0), "recv");
-
-        // close sockfd
-        sockfdp.reset();
+        check_syscall_error(send(sockfd, &message, sizeof(message), 0), "send");
+        check_syscall_error(recv(sockfd, &deliver_port, sizeof(deliver_port), 0), "recv");
+        close(sockfd);
 
         // New connection success
-        printf("Find listening server, via server ip : %s, server port : %d, \n", server_ip_str, ntohs(deliver_port));
+        printf("[lurk-client] Find listening server, via server ip : %s, server port : %d, \n", server_ip_str, ntohs(deliver_port));
 
-        check_syscall_error((*sync_dir_socketp.get() = socket(AF_INET, SOCK_STREAM, 0)), "socket");
-        struct sockaddr_in new_servaddr;
+        sync_dir_sockfd = check_syscall_error(socket(AF_INET, SOCK_STREAM, 0), "socket");
         memcpy(&new_servaddr, &servaddr, sizeof(struct sockaddr_in));
         new_servaddr.sin_port = deliver_port;
-        check_syscall_error(connect(*sync_dir_socketp.get(), (struct sockaddr *)&new_servaddr, sizeof(new_servaddr)), "second connect");
+        check_syscall_error(connect(sync_dir_sockfd, (struct sockaddr *)&new_servaddr, sizeof(new_servaddr)), "second connect");
         memset(verify_path, 0, sizeof(verify_path));
         get_config_verifypath(verify_path, sizeof(verify_path));
-
 
         uint16_t    deliver_file_port;
         // thread_no is begin with 0
         deliver_file_port = get_config_deliver_file_port(dir_thread_arg->thread_no);
 
-        printf("[lurk_client] server address = (%s :: %hu), begin sync dir: '%s'", server_ip_str, deliver_port, node.c_str());
+        printf("[lurk-client] server address = (%s :: %hu), begin sync dir: '%s'", server_ip_str, deliver_port, node.c_str());
 
         Performance_test    pf_test;
         pf_test.begin();
-        Sync_dir_sender     sender(sync_dir_socket, deliver_file_port, ST_COMMON,  node.c_str(), verify_path, getpid());
-        bool                sync_success_flag = true;
+        // sender(sync_dir_socket, deliver_file_port, ST_COMMON,  node.c_str(), verify_path, getpid());
+        sender = Sync_dir_sender_builder()
+                    .set_sockfd(sockfd)
+                    .set_deliver_port(deliver_file_port)
+                    .set_dirpath_from_database(node.c_str())
+                    .set_verify_rootpath(verify_path)
+                    .set_leader_pid(getpid())
+                    .build();
+        bool sync_success_flag = true;
         pf_test.end();
 
-        if ( sender.sync_start() == false) {
+        if ( sender->sync_start() == false) {
             sync_success_flag = false;
         }
         // shutdown(*sync_dir_socketp.get(), SHUT_RDWR);
         // close(sync_dir_socket);
 
         if (sync_success_flag == false) {
-            printf("[lurk client] 🥲sync dir '%s' meet some failures\n", node.c_str());
+            printf("[lurk-client] 🥲sync dir '%s' meet some failures\n", node.c_str());
             continue;
         } else {
-            printf("[lurk client] 😀Sync dir %s success, costs %f cpu seconds, %f actual seconds\n", node.c_str(), pf_test.get_times().cpu_duration, pf_test.get_times().time_duration);
+            printf("[lurk-client] 😀Sync dir %s success, costs %f cpu seconds, %f actual seconds\n", node.c_str(), pf_test.get_times().cpu_duration, pf_test.get_times().time_duration);
             continue;
         }
     }
-} catch (YAML::Exception & e) {
-    std::cerr << "[lurk client] sync dir catch config file error => " << e.what() << std::endl;
 } catch (std::runtime_error & e) {
-    std::cerr << "[lurk client] sync dir catch runtime error => " << e.what() << std::endl;
+    std::cerr << "[lurk-client] failed : " << e.what() << std::endl;
 } catch (std::exception & e) {
-    std::cerr << "[lurk client] sync dir catch other error => " << e.what() << std::endl;
+    std::cerr << "[lurk-client] failed : " << e.what() << std::endl;
 }
 
     delete dir_thread_arg;

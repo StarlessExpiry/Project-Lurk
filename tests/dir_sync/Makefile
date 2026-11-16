@@ -11,11 +11,14 @@ all:
 	@$(MAKE) $(TARGETS)
 	@$(MAKE) $(TARGETS_SRC)
 
-$(OBJ_DIR)/fake_file_deliver.o : fake_file_deliver.c
+$(OBJ_DIR)/fake_file_deliver.o : fake_file_deliver.cpp
 	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $^ -o $@
+	$(CXX) $(CXXFLAGS) -c $^ -o $@
 
+# get common/obj-test/*.o ....
 OBJ := $(wildcard $(addsuffix /$(OBJ_DIR)/*.o, $(SUB_DIR)))
+# remove core/file_deliver_recv.o and core/file_deliver_send.o,
+# add fake_file_deliver.o
 OBJ := $(filter-out %/file_deliver_recv.o %/file_deliver_send.o, $(OBJ))
 OBJ += $(OBJ_DIR)/fake_file_deliver.o
 

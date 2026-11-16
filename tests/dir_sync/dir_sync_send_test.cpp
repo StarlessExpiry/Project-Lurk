@@ -1,8 +1,9 @@
 #include "core/dir_sync.hpp"
-#include "deliver/deliver.h"
-#include "tools/msg_print.h"
-#include "deliver/file_deliver.h"
-#include "tools/sha.h"
+#include "core/deliver.h"
+#include "common/msg_print.h"
+#include "core/file_deliver.hpp"
+#include "common/sha.h"
+#include <iostream>
 #include <cstdio>
 #include <cstring>
 #include <sys/socket.h>
@@ -18,6 +19,8 @@ int main() {
     int                     sockfd;
     struct sockaddr_in      servaddr;
     char                    verify_path[4096];
+    Sync_dir_sender *       sender = nullptr;
+try {
 
     if ( (sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         MSG_DBG_F("Socket create failed: %s", strerror(errno));
@@ -43,7 +46,20 @@ int main() {
     // char basepath_hash[65];
     // memset(basepath_hash, 0, sizeof(basepath_hash));
     // sha256(basepath_hash, "./send", 6);
-    Sync_dir_sender sender(sockfd, 20211, ST_COMMON, "/Users/starless/Projects/Sync-Files-System/tests/send", "./send/verify", getpid());
-    sender.sync_start();
+    // Sync_dir_sender sender(sockfd, 20211, ST_COMMON, "/Users/starless/Projects/Sync-Files-System/tests/send", "./send/verify", getpid());
+    sender = Sync_dir_sender_builder()
+                .set_sockfd(sockfd)
+                .set_deliver_port(20211)
+                .set_dirpath_from_database("/Users/starless/Projects/Sync-Files-System/tests/send")
+                .set_verify_rootpath("./send/verify")
+                .set_leader_pid(getpid())
+                .build();
+    sender->sync_start();
     close(sockfd);
+} catch (std::runtime_error& e) {
+    std::cerr << "[lurk-client] failed : " << e.what() << std::endl;
+} catch (std::exception& e) {
+    std::cerr << "[lurk-client] failed : " << e.what() << std::endl;
+}
+    return EXIT_FAILURE;
 }

@@ -61,7 +61,7 @@ void init_config_client()
     tsd->config = YAML::LoadFile(tsd->yaml_path);
 }
 
-// will create in other process and thread
+// generate the config file in ~/.config/lurk/lurk_server_config.yaml
 void init_config_server(const char * recv_path)
 {
     pthread_once(&tsd_once_key, tsd_once);
@@ -86,7 +86,7 @@ void init_config_server(const char * recv_path)
         server_recv_path[strlen(server_recv_path)] = '/';
         make_dir(server_recv_path);
         server_recv_path[strlen(server_recv_path)-1] = 0;
-        MSG_DBG_F("%s", recv_path);
+        // MSG_DBG_F("%s", recv_path);
     } else {
         make_dir(recv_path);
     }
